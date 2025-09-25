@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: If you use this software, please cite the following paper.
+authors:
+  - family-names: Fathizadeh
+    given-names: Mersad
+    email: mersadf@uark.edu
+  - family-names: Wood
+    given-names: Clinton
+title: hvstrip-progressive — Progressive Layer Stripping for HVSR (DFA)
+version: 1.0.0
+date-released: 2025-01-01
+repository-code: https://github.com/mersadfathizadeh1995/hvstrip-progressive
+preferred-citation:
+  type: article
+  authors:
+    - family-names: Rahimi
+      given-names: Mohammad
+    - family-names: Wood
+      given-names: Clinton
+    - family-names: Fathizadeh
+      given-names: Mersad
+    - family-names: Rahimi
+      given-names: Salman
+  title: A Multi-method Geophysical Approach for Complex Shallow Landslide Characterization
+  journal: Annals of Geophysics
+  year: 2025
+  volume: '68'
+  issue: '3'
+  doi: 10.4401/ag-9203
+  start: NS336
