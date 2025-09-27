@@ -8,7 +8,7 @@ We welcome contributions to this project! This document outlines how to contribu
 
 1. **Fork and clone the repository**
    ```bash
-   git clone https://github.com/yourusername/hvstrip-progressive.git
+   git clone https://github.com/mersadfathizadeh1995/hvstrip-progressive.git
    cd hvstrip-progressive
    ```
 
