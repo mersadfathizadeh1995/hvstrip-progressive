@@ -1,0 +1,88 @@
+# Default configuration for HVSR Progressive Layer Stripping Analysis
+
+# Solver configuration
+solver:
+  exe_path: "HVf.exe"
+  fmin: 0.2
+  fmax: 20.0
+  nf: 71
+  nmr: 10
+  nml: 10
+  nks: 10
+  # Adaptive frequency scanning to avoid boundary misses
+  adaptive:
+    enable: true
+    max_passes: 2
+    edge_margin_frac: 0.05   # consider within 5% of bounds as edge
+    fmax_expand_factor: 2.0
+    fmin_shrink_factor: 0.5
+    fmax_limit: 60.0
+    fmin_limit: 0.05
+
+# Peak detection settings
+peak_detection:
+  method: "find_peaks"  # "max", "find_peaks", or "manual"
+  select: "leftmost"    # "max" or "leftmost" (for find_peaks)
+  find_peaks_params:
+    prominence: 0.2
+    distance: 3
+  freq_min: 0.5         # Optional frequency constraints
+  freq_max: null
+  # Guards to avoid edge/artefact picks
+  min_rel_height: 0.25  # fraction of global max amplitude
+  exclude_first_n: 1    # ignore the first N frequency bins
+
+# Plotting configuration
+plotting:
+  hv_curve:
+    x_axis_scale: "log"
+    y_axis_scale: "log"
+    y_compression: 1.5
+    smoothing:
+      enable: true
+      window_length: 9
+      poly_order: 3
+    show_bands: true
+    freq_window_left: 0.3
+    freq_window_right: 3.0
+    figure_width: 12
+    figure_height: 6
+    dpi: 200
+    
+  vs_profile:
+    show: true
+    annotate_deepest: true
+    annotate_max_vs: true
+    annotate_f0: true
+    figure_width: 6
+    figure_height: 8
+    dpi: 200
+    
+  colors:
+    hv_curve: "#2E86AB"
+    peak: "#E63946"
+    vs_profile: "#2E86AB"
+    layer_fill: "#A8DADC"
+
+# Output settings
+output:
+  save_separate: true
+  save_combined: true
+  formats: ["png", "pdf"]
+  dpi: 300
+  
+  filenames:
+    hv_curve: "hv_curve.png"
+    vs_profile: "vs_profile.png"
+    combined: "combined_analysis.png"
+    summary: "step_summary.csv"
+
+# Report generation
+reports:
+  include_waterfall: true
+  include_evolution: true
+  include_interfaces: true
+  publication_ready: true
+  
+  figure_formats: ["png", "pdf"]
+  data_formats: ["csv", "json"]
