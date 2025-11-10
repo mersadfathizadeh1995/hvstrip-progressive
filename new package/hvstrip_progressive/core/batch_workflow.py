@@ -19,16 +19,26 @@ import sys
 import time
 
 
+def _get_default_exe_path():
+    """Get default HVf executable path from hv_forward module."""
+    try:
+        from .hv_forward import DEFAULT_CONFIG
+        return DEFAULT_CONFIG["exe_path"]
+    except ImportError:
+        from hv_forward import DEFAULT_CONFIG
+        return DEFAULT_CONFIG["exe_path"]
+
+
 # Default configuration for the complete workflow
 DEFAULT_WORKFLOW_CONFIG = {
     # Stripper configuration
     "stripper": {
         "output_folder_name": "strip"
     },
-    
+
     # HV Forward modeling configuration
     "hv_forward": {
-        "exe_path": "HVf.exe",
+        "exe_path": _get_default_exe_path(),
         "fmin": 0.2,
         "fmax": 20.0,
         "nf": 71,
