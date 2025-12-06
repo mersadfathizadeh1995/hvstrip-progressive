@@ -7,7 +7,6 @@ Runs the complete progressive layer stripping workflow:
 3. Post-processing
 """
 
-import sys
 from pathlib import Path
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog
@@ -19,9 +18,8 @@ from qfluentwidgets import (
     StrongBodyLabel, TransparentToolButton
 )
 
-# Add parent directory to path to import hvstrip_progressive
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from hvstrip_progressive.core.batch_workflow import run_complete_workflow
+# Import from parent package
+from ...core.batch_workflow import run_complete_workflow
 
 
 class WorkflowWorker(QThread):

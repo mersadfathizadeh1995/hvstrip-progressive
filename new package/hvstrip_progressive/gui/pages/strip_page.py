@@ -4,7 +4,6 @@ Layer Stripping Page
 Progressive layer removal functionality.
 """
 
-import sys
 from pathlib import Path
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog
@@ -15,8 +14,8 @@ from qfluentwidgets import (
     TransparentToolButton
 )
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from hvstrip_progressive.core.stripper import write_peel_sequence
+# Import from parent package
+from ...core.stripper import write_peel_sequence
 
 
 class StripWorker(QThread):

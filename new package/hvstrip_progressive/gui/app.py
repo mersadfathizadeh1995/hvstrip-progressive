@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt, QLocale
 from qfluentwidgets import setTheme, Theme, FluentTranslator
 
-from main_window import MainWindow
+from .main_window import MainWindow
 
 
 def main():

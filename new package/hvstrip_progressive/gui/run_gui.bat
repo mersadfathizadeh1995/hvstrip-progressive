@@ -22,9 +22,9 @@ if errorlevel 1 (
     pip install -r requirements.txt
 )
 
-REM Run the application
+REM Run the application as a module
 echo Starting GUI application...
-python app.py
+python -m hvstrip_progressive.gui.app
 
 echo.
 echo Application closed

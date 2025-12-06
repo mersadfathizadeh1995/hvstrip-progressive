@@ -68,35 +68,29 @@ A comprehensive graphical user interface for progressive layer stripping analysi
 
 ### Requirements
 
-```bash
-# Core dependencies
-pip install PySide6>=6.5.0
-pip install PySide6-Fluent-Widgets>=1.4.0
-pip install numpy>=1.24.0
-pip install matplotlib>=3.7.0
-pip install scipy>=1.10.0
-pip install pandas>=2.0.0
-pip install PyYAML>=6.0
-pip install seaborn>=0.12.0
-```
+The GUI is part of the `hvstrip_progressive` package. All dependencies are included in the package requirements.
 
 ### Setup
 
-1. Install the hvstrip_progressive package:
+1. Install the hvstrip_progressive package with GUI dependencies:
 ```bash
 cd "new package"
 pip install -e .
+pip install -r hvstrip_progressive/gui/requirements.txt
 ```
 
-2. Install GUI dependencies:
+2. Run the GUI application:
 ```bash
-pip install -r hvstrip_progressive_gui/requirements.txt
-```
+# Option 1: Using the launcher script (Linux/Mac)
+cd hvstrip_progressive/gui
+./run_gui.sh
 
-3. Run the GUI application:
-```bash
-cd hvstrip_progressive_gui
-python app.py
+# Option 2: Using the launcher script (Windows)
+cd hvstrip_progressive\gui
+run_gui.bat
+
+# Option 3: Run as Python module
+python -m hvstrip_progressive.gui.app
 ```
 
 ## Usage
@@ -105,7 +99,14 @@ python app.py
 
 1. **Launch the application**:
    ```bash
-   python app.py
+   # From the gui directory
+   cd hvstrip_progressive/gui
+   ./run_gui.sh  # Linux/Mac
+   # or
+   run_gui.bat   # Windows
+
+   # Or run as module from anywhere
+   python -m hvstrip_progressive.gui.app
    ```
 
 2. **Complete Workflow** (Recommended for first-time users):
@@ -238,21 +239,28 @@ Contains peak frequencies, amplitudes, model parameters, etc.
 ## Architecture
 
 ```
-hvstrip_progressive_gui/
-├── app.py                  # Application entry point
-├── main_window.py          # Main window with navigation
-├── pages/                  # Individual page modules
+hvstrip_progressive/
+├── gui/                    # GUI module (this package)
 │   ├── __init__.py
-│   ├── workflow_page.py    # Complete workflow
-│   ├── strip_page.py       # Layer stripping
-│   ├── forward_page.py     # HV forward modeling
-│   ├── postprocess_page.py # Post-processing
-│   ├── report_page.py      # Report generation
-│   ├── batch_page.py       # Batch processing
-│   ├── analysis_page.py    # Advanced analysis
-│   └── settings_page.py    # Settings & configuration
-├── README.md
-└── requirements.txt
+│   ├── app.py              # Application entry point
+│   ├── main_window.py      # Main window with navigation
+│   ├── pages/              # Individual page modules
+│   │   ├── __init__.py
+│   │   ├── workflow_page.py    # Complete workflow
+│   │   ├── strip_page.py       # Layer stripping
+│   │   ├── forward_page.py     # HV forward modeling
+│   │   ├── postprocess_page.py # Post-processing
+│   │   ├── report_page.py      # Report generation
+│   │   ├── batch_page.py       # Batch processing
+│   │   ├── analysis_page.py    # Advanced analysis
+│   │   └── settings_page.py    # Settings & configuration
+│   ├── README.md
+│   ├── requirements.txt
+│   ├── run_gui.sh          # Linux/Mac launcher
+│   └── run_gui.bat         # Windows launcher
+├── core/                   # Core analysis modules
+├── utils/                  # Utility functions
+└── ...
 ```
 
 ## Key Technologies
