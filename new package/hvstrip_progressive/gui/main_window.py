@@ -4,7 +4,7 @@ Main Window for HVSR Progressive Layer Stripping GUI
 Provides navigation interface with sidebar and page management.
 """
 
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtWidgets import QWidget, QStackedWidget, QHBoxLayout, QVBoxLayout
 from PySide6.QtGui import QIcon
 from qfluentwidgets import (
@@ -49,6 +49,9 @@ class MainWindow(MSFluentWindow):
         self.splashScreen.setIconSize(QSize(102, 102))
         self.show()
 
+        # Close splash screen after a short delay to show the main window
+        QTimer.singleShot(500, self.splashScreen.finish)
+
     def initNavigation(self):
         """Initialize navigation interface."""
         # Add workflow page (main functionality)
@@ -58,9 +61,6 @@ class MainWindow(MSFluentWindow):
             'Complete Workflow',
             FIF.PLAY
         )
-
-        # Add separator
-        self.navigationInterface.addSeparator()
 
         # Add individual component pages
         self.addSubInterface(
@@ -79,9 +79,9 @@ class MainWindow(MSFluentWindow):
 
         self.addSubInterface(
             self.postprocessPage,
-            FIF.CHART,
+            FIF.PIE_SINGLE,
             'Post-processing',
-            FIF.CHART
+            FIF.PIE_SINGLE
         )
 
         self.addSubInterface(
@@ -90,9 +90,6 @@ class MainWindow(MSFluentWindow):
             'Report Generation',
             FIF.DOCUMENT
         )
-
-        # Add separator
-        self.navigationInterface.addSeparator()
 
         # Add batch and analysis pages
         self.addSubInterface(

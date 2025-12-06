@@ -6,25 +6,37 @@ echo HVSR Progressive Layer Stripping GUI
 echo ==========================================
 echo.
 
-REM Check if Python is available
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo Error: Python is not installed or not in PATH
+REM Set the project root directory (two levels up from gui folder)
+set "PROJECT_ROOT=%~dp0..\.."
+set "VENV_PYTHON=%PROJECT_ROOT%\.venv\Scripts\python.exe"
+
+REM Check if virtual environment exists
+if not exist "%VENV_PYTHON%" (
+    echo Error: Virtual environment not found at %VENV_PYTHON%
+    echo Please create a virtual environment first using:
+    echo python -m venv .venv
     pause
     exit /b 1
 )
 
+REM Check Python version
+echo Using Python from virtual environment...
+"%VENV_PYTHON%" --version
+
 REM Check if required packages are installed
 echo Checking dependencies...
-python -c "import PySide6" 2>nul
+"%VENV_PYTHON%" -c "import PySide6" 2>nul
 if errorlevel 1 (
     echo Warning: PySide6 not found. Installing dependencies...
-    pip install -r requirements.txt
+    "%VENV_PYTHON%" -m pip install -r "%~dp0requirements.txt"
 )
+
+REM Change to project root directory
+cd /d "%PROJECT_ROOT%"
 
 REM Run the application as a module
 echo Starting GUI application...
-python -m hvstrip_progressive.gui.app
+"%VENV_PYTHON%" -m hvstrip_progressive.gui
 
 echo.
 echo Application closed
