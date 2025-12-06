@@ -1,0 +1,2 @@
+Step,N_Finite_Layers,Peak_Frequency_Hz,Peak_Amplitude,L1_Thickness,L1_Vp,L1_Vs,L1_Rho,L2_Thickness,L2_Vp,L2_Vs,L2_Rho,L3_Thickness,L3_Vp,L3_Vs,L3_Rho,HS_Vp,HS_Vs,HS_Rho
+Step0,3,1.897143,26.276522,19.00,302.00,152.00,1292.00,10.00,1286.00,648.00,1856.00,9.00,1599.00,923.00,1960.00,1745.00,1007.00,2003.00
