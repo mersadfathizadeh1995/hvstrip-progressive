@@ -4,7 +4,6 @@ Report Generation Page
 Generate comprehensive analysis reports from progressive stripping results.
 """
 
-import sys
 from pathlib import Path
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog
@@ -15,9 +14,8 @@ from qfluentwidgets import (
     TransparentToolButton
 )
 
-# Add parent directory to path to import hvstrip_progressive
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from hvstrip_progressive.core.report_generator import ProgressiveStrippingReporter
+# Import from parent package
+from ...core.report_generator import ProgressiveStrippingReporter
 
 
 class ReportWorker(QThread):

@@ -4,7 +4,6 @@ Post-Processing Page
 Generate publication-ready plots and analysis from HV curve and velocity model.
 """
 
-import sys
 from pathlib import Path
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog
@@ -16,9 +15,8 @@ from qfluentwidgets import (
     TransparentToolButton
 )
 
-# Add parent directory to path to import hvstrip_progressive
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from hvstrip_progressive.core.hv_postprocess import process
+# Import from parent package
+from ...core.hv_postprocess import process
 
 
 class PostprocessWorker(QThread):

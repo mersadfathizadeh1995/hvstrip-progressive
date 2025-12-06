@@ -4,7 +4,6 @@ Advanced Analysis Page
 Perform advanced statistical analysis on progressive stripping results.
 """
 
-import sys
 from pathlib import Path
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog
@@ -15,9 +14,8 @@ from qfluentwidgets import (
     TransparentToolButton
 )
 
-# Add parent directory to path to import hvstrip_progressive
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from hvstrip_progressive.core.advanced_analysis import analyze_strip_directory
+# Import from parent package
+from ...core.advanced_analysis import analyze_strip_directory
 
 
 class AnalysisWorker(QThread):

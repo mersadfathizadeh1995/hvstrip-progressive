@@ -4,7 +4,6 @@ Settings Page
 Configure application settings and preferences.
 """
 
-import sys
 from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog
@@ -15,9 +14,8 @@ from qfluentwidgets import (
     PrimaryPushButton, TransparentToolButton
 )
 
-# Add parent directory to path to import hvstrip_progressive
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from hvstrip_progressive.utils.config import load_config, save_config
+# Import from parent package
+from ...utils.config import load_config, save_config
 
 
 class SettingsPage(QWidget):

@@ -4,7 +4,6 @@ HV Forward Modeling Page
 Compute HV curve for a single velocity model using HVf executable.
 """
 
-import sys
 from pathlib import Path
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog
@@ -16,9 +15,8 @@ from qfluentwidgets import (
     TransparentToolButton
 )
 
-# Add parent directory to path to import hvstrip_progressive
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from hvstrip_progressive.core.hv_forward import compute_hv_curve
+# Import from parent package
+from ...core.hv_forward import compute_hv_curve
 
 
 class ForwardWorker(QThread):

@@ -13,14 +13,14 @@ from qfluentwidgets import (
     isDarkTheme, MSFluentWindow, SplashScreen
 )
 
-from pages.workflow_page import WorkflowPage
-from pages.strip_page import StripPage
-from pages.forward_page import ForwardPage
-from pages.postprocess_page import PostprocessPage
-from pages.report_page import ReportPage
-from pages.batch_page import BatchPage
-from pages.analysis_page import AnalysisPage
-from pages.settings_page import SettingsPage
+from .pages.workflow_page import WorkflowPage
+from .pages.strip_page import StripPage
+from .pages.forward_page import ForwardPage
+from .pages.postprocess_page import PostprocessPage
+from .pages.report_page import ReportPage
+from .pages.batch_page import BatchPage
+from .pages.analysis_page import AnalysisPage
+from .pages.settings_page import SettingsPage
 
 
 class MainWindow(MSFluentWindow):

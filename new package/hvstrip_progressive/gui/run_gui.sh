@@ -20,9 +20,9 @@ if [ $? -ne 0 ]; then
     pip install -r requirements.txt
 fi
 
-# Run the application
+# Run the application as a module
 echo "Starting GUI application..."
-python3 app.py
+python3 -m hvstrip_progressive.gui.app
 
 echo ""
 echo "Application closed"
