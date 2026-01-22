@@ -12,7 +12,7 @@ from qfluentwidgets import (
     PushButton, LineEdit, SpinBox, DoubleSpinBox, ComboBox,
     FluentIcon as FIF, InfoBar, InfoBarPosition,
     PrimaryPushButton, TransparentToolButton
-)
+, ScrollArea)
 
 # Import from parent package
 from ...utils.config import load_config, save_config
@@ -31,7 +31,18 @@ class SettingsPage(QWidget):
 
     def initUI(self):
         """Initialize user interface."""
-        layout = QVBoxLayout(self)
+        # Main layout
+        mainLayout = QVBoxLayout(self)
+        mainLayout.setContentsMargins(0, 0, 0, 0)
+
+        # Create scroll area
+        scrollArea = ScrollArea(self)
+        scrollArea.setWidgetResizable(True)
+        scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        # Content widget
+        contentWidget = QWidget()
+        layout = QVBoxLayout(contentWidget)
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
@@ -81,6 +92,10 @@ class SettingsPage(QWidget):
         buttonLayout.addWidget(saveButton)
 
         layout.addLayout(buttonLayout)
+
+        # Set scroll area content
+        scrollArea.setWidget(contentWidget)
+        mainLayout.addWidget(scrollArea)
         layout.addStretch()
 
     def createHvfCard(self):

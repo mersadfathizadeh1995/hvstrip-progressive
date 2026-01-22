@@ -6,16 +6,17 @@ Perform advanced statistical analysis on progressive stripping results.
 
 from pathlib import Path
 from PySide6.QtCore import Qt, Signal, QThread
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog, QSizePolicy
 from qfluentwidgets import (
     CardWidget, TitleLabel, SubtitleLabel, BodyLabel,
     PushButton, LineEdit, CheckBox, TextEdit, FluentIcon as FIF,
     InfoBar, InfoBarPosition, PrimaryPushButton,
-    TransparentToolButton
+    TransparentToolButton, ScrollArea
 )
 
 # Import from parent package
 from ...core.advanced_analysis import analyze_strip_directory
+from ..widgets.plot_widget import MatplotlibWidget
 
 
 class AnalysisWorker(QThread):
@@ -52,53 +53,74 @@ class AnalysisPage(QWidget):
         super().__init__(parent)
         self.setObjectName("analysisPage")
         self.worker = None
+        self.latest_results = None
         self.initUI()
 
     def initUI(self):
         """Initialize user interface."""
-        layout = QVBoxLayout(self)
+        # Main layout
+        mainLayout = QVBoxLayout(self)
+        mainLayout.setContentsMargins(0, 0, 0, 0)
+
+        # Create scroll area
+        scrollArea = ScrollArea(self)
+        scrollArea.setWidgetResizable(True)
+        scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        # Content widget
+        contentWidget = QWidget()
+        layout = QVBoxLayout(contentWidget)
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
         # Title
-        titleLabel = TitleLabel("Advanced Analysis", self)
+        titleLabel = TitleLabel("Advanced Analysis", contentWidget)
         layout.addWidget(titleLabel)
 
         # Description
         descLabel = BodyLabel(
             "Perform advanced statistical analysis on progressive layer stripping results.\n"
             "Includes controlling interface detection, layer contribution analysis, and statistics.",
-            self
+            contentWidget
         )
         descLabel.setWordWrap(True)
         layout.addWidget(descLabel)
 
         # Input Configuration Card
-        inputCard = self.createInputCard()
+        inputCard = self.createInputCard(contentWidget)
         layout.addWidget(inputCard)
 
         # Analysis Options Card
-        optionsCard = self.createOptionsCard()
+        optionsCard = self.createOptionsCard(contentWidget)
         layout.addWidget(optionsCard)
 
+        # Visualization Card
+        vizCard = self.createVisualizationCard(contentWidget)
+        layout.addWidget(vizCard)
+
         # Output Card
-        outputCard = self.createOutputCard()
+        outputCard = self.createOutputCard(contentWidget)
         layout.addWidget(outputCard)
 
         # Control Buttons
         buttonLayout = QHBoxLayout()
         buttonLayout.addStretch()
 
-        self.runButton = PrimaryPushButton(FIF.BOOK_SHELF, "Run Analysis", self)
+        self.runButton = PrimaryPushButton(FIF.BOOK_SHELF, "Run Analysis", contentWidget)
         self.runButton.clicked.connect(self.runAnalysis)
+        self.runButton.setFixedHeight(36)
         buttonLayout.addWidget(self.runButton)
 
         layout.addLayout(buttonLayout)
         layout.addStretch()
 
-    def createInputCard(self):
+        # Set scroll area content
+        scrollArea.setWidget(contentWidget)
+        mainLayout.addWidget(scrollArea)
+
+    def createInputCard(self, parent):
         """Create input configuration card."""
-        card = CardWidget(self)
+        card = CardWidget(parent)
         cardLayout = QVBoxLayout(card)
         cardLayout.setContentsMargins(20, 20, 20, 20)
         cardLayout.setSpacing(15)
@@ -115,10 +137,12 @@ class AnalysisPage(QWidget):
 
         self.stripEdit = LineEdit(card)
         self.stripEdit.setPlaceholderText("Select strip directory (contains StepX folders)...")
-        stripLayout.addWidget(self.stripEdit)
+        self.stripEdit.setMinimumWidth(400)
+        stripLayout.addWidget(self.stripEdit, 1)
 
         stripButton = TransparentToolButton(FIF.FOLDER, card)
         stripButton.clicked.connect(self.selectStripDir)
+        stripButton.setFixedSize(36, 36)
         stripLayout.addWidget(stripButton)
 
         cardLayout.addLayout(stripLayout)
@@ -131,19 +155,21 @@ class AnalysisPage(QWidget):
 
         self.outputEdit = LineEdit(card)
         self.outputEdit.setPlaceholderText("Optional: output directory for analysis results")
-        outputLayout.addWidget(self.outputEdit)
+        self.outputEdit.setMinimumWidth(400)
+        outputLayout.addWidget(self.outputEdit, 1)
 
         outputButton = TransparentToolButton(FIF.FOLDER, card)
         outputButton.clicked.connect(self.selectOutputDir)
+        outputButton.setFixedSize(36, 36)
         outputLayout.addWidget(outputButton)
 
         cardLayout.addLayout(outputLayout)
 
         return card
 
-    def createOptionsCard(self):
+    def createOptionsCard(self, parent):
         """Create analysis options card."""
-        card = CardWidget(self)
+        card = CardWidget(parent)
         cardLayout = QVBoxLayout(card)
         cardLayout.setContentsMargins(20, 20, 20, 20)
         cardLayout.setSpacing(15)
@@ -187,9 +213,42 @@ class AnalysisPage(QWidget):
 
         return card
 
-    def createOutputCard(self):
+    def createVisualizationCard(self, parent):
+        """Create visualization card with plots."""
+        card = CardWidget(parent)
+        cardLayout = QVBoxLayout(card)
+        cardLayout.setContentsMargins(20, 20, 20, 20)
+        cardLayout.setSpacing(15)
+
+        # Title
+        titleLayout = QHBoxLayout()
+        cardTitle = SubtitleLabel("Visualization", card)
+        titleLayout.addWidget(cardTitle)
+        titleLayout.addStretch()
+
+        self.plotButton = PushButton(FIF.PIE_SINGLE, "Generate Plots", card)
+        self.plotButton.clicked.connect(self.generatePlots)
+        self.plotButton.setEnabled(False)
+        self.plotButton.setFixedHeight(32)
+        titleLayout.addWidget(self.plotButton)
+
+        self.exportPlotButton = PushButton(FIF.SAVE, "Export Plot", card)
+        self.exportPlotButton.clicked.connect(self.exportPlot)
+        self.exportPlotButton.setEnabled(False)
+        self.exportPlotButton.setFixedHeight(32)
+        titleLayout.addWidget(self.exportPlotButton)
+
+        cardLayout.addLayout(titleLayout)
+
+        # Matplotlib widget
+        self.plotWidget = MatplotlibWidget(card, figsize=(10, 6))
+        cardLayout.addWidget(self.plotWidget)
+
+        return card
+
+    def createOutputCard(self, parent):
         """Create output display card."""
-        card = CardWidget(self)
+        card = CardWidget(parent)
         cardLayout = QVBoxLayout(card)
         cardLayout.setContentsMargins(20, 20, 20, 20)
         cardLayout.setSpacing(15)
@@ -201,7 +260,7 @@ class AnalysisPage(QWidget):
         # Output text
         self.outputText = TextEdit(card)
         self.outputText.setReadOnly(True)
-        self.outputText.setFixedHeight(350)
+        self.outputText.setMinimumHeight(300)
         cardLayout.addWidget(self.outputText)
 
         return card
@@ -258,6 +317,7 @@ class AnalysisPage(QWidget):
 
         # Disable run button
         self.runButton.setEnabled(False)
+        self.plotButton.setEnabled(False)
         self.outputText.clear()
         self.outputText.append("Starting advanced analysis...")
         self.outputText.append(f"Strip directory: {strip_dir}")
@@ -278,6 +338,8 @@ class AnalysisPage(QWidget):
 
     def analysisFinished(self, results):
         """Handle analysis completion."""
+        self.latest_results = results
+
         self.outputText.append("")
         self.outputText.append("="*60)
         self.outputText.append("ADVANCED ANALYSIS COMPLETED!")
@@ -289,7 +351,8 @@ class AnalysisPage(QWidget):
         if stats:
             self.outputText.append("STATISTICAL SUMMARY:")
             self.outputText.append(f"  Number of steps: {stats.get('n_steps', 0)}")
-            self.outputText.append(f"  Peak frequency range: {stats.get('peak_freq_range', (0, 0))[0]:.2f} - {stats.get('peak_freq_range', (0, 0))[1]:.2f} Hz")
+            peak_range = stats.get('peak_freq_range', (0, 0))
+            self.outputText.append(f"  Peak frequency range: {peak_range[0]:.2f} - {peak_range[1]:.2f} Hz")
             self.outputText.append(f"  Peak frequency mean: {stats.get('peak_freq_mean', 0):.2f} Hz")
             self.outputText.append(f"  Peak frequency std: {stats.get('peak_freq_std', 0):.2f} Hz")
             self.outputText.append(f"  Total frequency change: {stats.get('peak_freq_change_total', 0):.2f} Hz")
@@ -324,8 +387,9 @@ class AnalysisPage(QWidget):
                     if file.is_file():
                         self.outputText.append(f"  {file.name}")
 
-        # Re-enable button
+        # Re-enable buttons
         self.runButton.setEnabled(True)
+        self.plotButton.setEnabled(True)
 
         # Show success message
         InfoBar.success(
@@ -352,3 +416,111 @@ class AnalysisPage(QWidget):
             position=InfoBarPosition.TOP,
             duration=5000
         )
+
+    def generatePlots(self):
+        """Generate visualization plots from analysis results."""
+        if not self.latest_results:
+            InfoBar.warning(
+                "No Data",
+                "Run analysis first to generate plots",
+                parent=self,
+                position=InfoBarPosition.TOP
+            )
+            return
+
+        try:
+            import numpy as np
+            fig = self.plotWidget.get_figure()
+            fig.clear()
+
+            stats = self.latest_results.get('statistics', {})
+            controlling = self.latest_results.get('controlling_interfaces', [])
+
+            # Create 2x2 subplot
+            axes = fig.subplots(2, 2)
+
+            # Plot 1: Peak frequency evolution
+            if 'peak_freqs' in stats:
+                peak_freqs = stats['peak_freqs']
+                steps = range(1, len(peak_freqs) + 1)
+                axes[0, 0].plot(steps, peak_freqs, 'o-', linewidth=2, markersize=8)
+                axes[0, 0].set_xlabel('Step Number')
+                axes[0, 0].set_ylabel('Peak Frequency (Hz)')
+                axes[0, 0].set_title('Peak Frequency Evolution')
+                axes[0, 0].grid(True, alpha=0.3)
+
+            # Plot 2: Peak amplitude evolution
+            if 'peak_amps' in stats:
+                peak_amps = stats['peak_amps']
+                steps = range(1, len(peak_amps) + 1)
+                axes[0, 1].plot(steps, peak_amps, 's-', color='orange', linewidth=2, markersize=8)
+                axes[0, 1].set_xlabel('Step Number')
+                axes[0, 1].set_ylabel('Peak Amplitude')
+                axes[0, 1].set_title('Peak Amplitude Evolution')
+                axes[0, 1].grid(True, alpha=0.3)
+
+            # Plot 3: Frequency changes
+            if controlling:
+                steps = [c['step'] for c in controlling]
+                freq_changes = [c['freq_change'] for c in controlling]
+                colors = ['red' if c.get('is_controlling', False) else 'blue' for c in controlling]
+                axes[1, 0].bar(steps, freq_changes, color=colors, alpha=0.7)
+                axes[1, 0].set_xlabel('Step Transition')
+                axes[1, 0].set_ylabel('Frequency Change (Hz)')
+                axes[1, 0].set_title('Step-wise Frequency Changes')
+                axes[1, 0].grid(True, alpha=0.3, axis='y')
+
+            # Plot 4: Significance scores
+            if controlling:
+                steps = [c['step'] for c in controlling]
+                scores = [c['significance_score'] for c in controlling]
+                axes[1, 1].bar(steps, scores, color='green', alpha=0.7)
+                axes[1, 1].set_xlabel('Step Transition')
+                axes[1, 1].set_ylabel('Significance Score')
+                axes[1, 1].set_title('Interface Significance')
+                axes[1, 1].grid(True, alpha=0.3, axis='y')
+
+            fig.tight_layout()
+            self.plotWidget.refresh()
+            self.exportPlotButton.setEnabled(True)
+
+            InfoBar.success(
+                "Plots Generated",
+                "Visualization plots created successfully",
+                parent=self,
+                position=InfoBarPosition.TOP
+            )
+
+        except Exception as e:
+            InfoBar.error(
+                "Plot Error",
+                f"Failed to generate plots: {str(e)}",
+                parent=self,
+                position=InfoBarPosition.TOP
+            )
+
+    def exportPlot(self):
+        """Export the current plot to file."""
+        fileName, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Plot",
+            "analysis_plot.png",
+            "PNG Files (*.png);;PDF Files (*.pdf);;SVG Files (*.svg)"
+        )
+
+        if fileName:
+            try:
+                self.plotWidget.get_figure().savefig(fileName, dpi=300, bbox_inches='tight')
+                InfoBar.success(
+                    "Exported",
+                    f"Plot saved to {Path(fileName).name}",
+                    parent=self,
+                    position=InfoBarPosition.TOP
+                )
+            except Exception as e:
+                InfoBar.error(
+                    "Export Error",
+                    f"Failed to save plot: {str(e)}",
+                    parent=self,
+                    position=InfoBarPosition.TOP
+                )

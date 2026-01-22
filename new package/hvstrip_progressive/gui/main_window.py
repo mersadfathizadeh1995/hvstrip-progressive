@@ -29,7 +29,8 @@ class MainWindow(MSFluentWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("HVSR Progressive Layer Stripping Analysis")
-        self.resize(1200, 800)
+        self.resize(1400, 900)
+        self.setMinimumSize(1000, 700)
 
         # Create pages
         self.workflowPage = WorkflowPage(self)

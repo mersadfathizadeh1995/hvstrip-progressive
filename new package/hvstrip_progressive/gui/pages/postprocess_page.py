@@ -13,7 +13,7 @@ from qfluentwidgets import (
     TextEdit, FluentIcon as FIF,
     InfoBar, InfoBarPosition, PrimaryPushButton,
     TransparentToolButton
-)
+, ScrollArea)
 
 # Import from parent package
 from ...core.hv_postprocess import process
@@ -57,7 +57,18 @@ class PostprocessPage(QWidget):
 
     def initUI(self):
         """Initialize user interface."""
-        layout = QVBoxLayout(self)
+        # Main layout
+        mainLayout = QVBoxLayout(self)
+        mainLayout.setContentsMargins(0, 0, 0, 0)
+
+        # Create scroll area
+        scrollArea = ScrollArea(self)
+        scrollArea.setWidgetResizable(True)
+        scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        # Content widget
+        contentWidget = QWidget()
+        layout = QVBoxLayout(contentWidget)
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
@@ -95,6 +106,10 @@ class PostprocessPage(QWidget):
         buttonLayout.addWidget(self.runButton)
 
         layout.addLayout(buttonLayout)
+
+        # Set scroll area content
+        scrollArea.setWidget(contentWidget)
+        mainLayout.addWidget(scrollArea)
         layout.addStretch()
 
     def createInputCard(self):

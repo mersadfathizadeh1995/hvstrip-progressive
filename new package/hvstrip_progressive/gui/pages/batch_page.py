@@ -13,7 +13,7 @@ from qfluentwidgets import (
     TextEdit, ProgressBar, FluentIcon as FIF,
     InfoBar, InfoBarPosition, PrimaryPushButton,
     TransparentToolButton
-)
+, ScrollArea)
 
 # Import from parent package
 from ...core.batch_workflow import run_complete_workflow
@@ -109,7 +109,18 @@ class BatchPage(QWidget):
 
     def initUI(self):
         """Initialize user interface."""
-        layout = QVBoxLayout(self)
+        # Main layout
+        mainLayout = QVBoxLayout(self)
+        mainLayout.setContentsMargins(0, 0, 0, 0)
+
+        # Create scroll area
+        scrollArea = ScrollArea(self)
+        scrollArea.setWidgetResizable(True)
+        scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        # Content widget
+        contentWidget = QWidget()
+        layout = QVBoxLayout(contentWidget)
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
@@ -156,6 +167,10 @@ class BatchPage(QWidget):
         buttonLayout.addWidget(self.cancelButton)
 
         layout.addLayout(buttonLayout)
+
+        # Set scroll area content
+        scrollArea.setWidget(contentWidget)
+        mainLayout.addWidget(scrollArea)
         layout.addStretch()
 
     def createInputCard(self):
