@@ -12,14 +12,48 @@ Usage (as a module):
 """
 
 import os
+import platform
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Dict, Tuple, List
 
 
+def _get_default_exe_path() -> str:
+    """Auto-detect appropriate HVf executable based on platform."""
+    # Get the package directory
+    pkg_dir = Path(__file__).parent.parent
+    bin_dir = pkg_dir / "bin"
+
+    system = platform.system()
+    if system == "Linux":
+        # Try Linux executables in order of preference
+        candidates = [
+            bin_dir / "exe_Linux" / "HVf",
+            bin_dir / "exe_Linux" / "HVf_Serial",
+        ]
+    elif system == "Windows":
+        candidates = [
+            bin_dir / "exe_Win" / "HVf.exe",
+        ]
+    else:
+        # Darwin (macOS) or others - try Linux version
+        candidates = [
+            bin_dir / "exe_Linux" / "HVf",
+            bin_dir / "exe_Linux" / "HVf_Serial",
+        ]
+
+    # Return first existing executable
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    # Fallback to generic name (will likely fail but preserves backward compatibility)
+    return "HVf.exe"
+
+
 DEFAULT_CONFIG = {
-    "exe_path": str(Path("HVf.exe").resolve()),
+    "exe_path": _get_default_exe_path(),
     "fmin": 0.2,
     "fmax": 20.0,
     "nf": 71,

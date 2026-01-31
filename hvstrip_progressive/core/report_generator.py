@@ -71,8 +71,8 @@ class ProgressiveStrippingReporter:
         self.step_data = self._collect_step_data()
         self.analysis = self._analyze_data()
         
-        print(f"📊 Initialized reporter with {len(self.step_data)} steps")
-        print(f"📁 Output directory: {self.output_dir}")
+        print(f"[*] Initialized reporter with {len(self.step_data)} steps")
+        print(f"[>] Output directory: {self.output_dir}")
     
     def _collect_step_data(self) -> List[Dict]:
         """Collect data from all step folders."""
@@ -199,6 +199,10 @@ class ProgressiveStrippingReporter:
         return {
             'n_layers': n_layers,
             'layers': layers,
+            'thicknesses': [l['thickness'] for l in layers],
+            'vs': [l['vs'] for l in layers],
+            'vp': [l['vp'] for l in layers],
+            'rho': [l['rho'] for l in layers],
             'total_thickness': total_thickness,
             'interfaces': interfaces
         }
@@ -287,60 +291,65 @@ class ProgressiveStrippingReporter:
     def generate_comprehensive_report(self) -> Dict[str, Path]:
         """Generate all report components."""
         print("\n" + "="*70)
-        print("📊 GENERATING COMPREHENSIVE ANALYSIS REPORT")
+        print("GENERATING COMPREHENSIVE ANALYSIS REPORT")
         print("="*70)
         
         report_files = {}
         
         try:
             # 1. Summary CSV
-            print("📝 Creating analysis summary CSV...")
+            print("[1/8] Creating analysis summary CSV...")
             summary_csv = self._create_analysis_summary_csv()
             report_files['analysis_summary_csv'] = summary_csv
             
             # 2. HV Curves Overlay Plot
-            print("📈 Creating HV curves overlay plot...")
+            print("[2/8] Creating HV curves overlay plot...")
             overlay_fig = self._create_hv_overlay_plot()
             report_files['hv_overlay_plot'] = overlay_fig
             
             # 3. Peak Evolution Analysis
-            print("📊 Creating peak evolution analysis...")
+            print("[3/8] Creating peak evolution analysis...")
             evolution_fig = self._create_peak_evolution_plot()
             report_files['peak_evolution_plot'] = evolution_fig
             
             # 4. Interface Analysis Plot
-            print("🔍 Creating interface analysis...")
+            print("[4/8] Creating interface analysis...")
             interface_fig = self._create_interface_analysis_plot()
             report_files['interface_analysis_plot'] = interface_fig
             
             # 5. Waterfall Plot
-            print("🌊 Creating waterfall plot...")
+            print("[5/8] Creating waterfall plot...")
             waterfall_fig = self._create_waterfall_plot()
             report_files['waterfall_plot'] = waterfall_fig
             
             # 6. Publication-Ready Figure
-            print("📚 Creating publication figure...")
+            print("[6/8] Creating publication figure...")
             publication_fig = self._create_publication_figure()
             report_files['publication_figure'] = publication_fig
             
             # 7. Text Report
-            print("📄 Creating text report...")
+            print("[7/8] Creating text report...")
             text_report = self._create_text_report()
             report_files['text_report'] = text_report
             
             # 8. Analysis Metadata
-            print("📋 Creating analysis metadata...")
+            print("[8/8] Creating analysis metadata...")
             metadata_file = self._create_metadata()
             report_files['metadata'] = metadata_file
             
-            print("\n✅ REPORT GENERATION COMPLETED SUCCESSFULLY!")
-            print(f"📁 All files saved in: {self.output_dir}")
-            print(f"📊 Generated {len(report_files)} report components")
+            # 9. PDF Report (multi-page with 3 steps per page)
+            print("[9/9] Creating PDF report...")
+            pdf_report = self._create_pdf_report()
+            report_files['pdf_report'] = pdf_report
+            
+            print("\n[OK] REPORT GENERATION COMPLETED SUCCESSFULLY!")
+            print(f"[>] All files saved in: {self.output_dir}")
+            print(f"[>] Generated {len(report_files)} report components")
             
             return report_files
             
         except Exception as e:
-            print(f"\n❌ Error during report generation: {e}")
+            print(f"\n[ERROR] Error during report generation: {e}")
             import traceback
             traceback.print_exc()
             return report_files
@@ -840,6 +849,145 @@ class ProgressiveStrippingReporter:
             json.dump(metadata, f, indent=2, default=str)
         
         return metadata_path
+    
+    def _create_pdf_report(self) -> Path:
+        """Create a multi-page PDF report with 3 steps per page.
+        
+        Each step shows:
+        - Vs profile with depth annotation
+        - HVSR curve with selected peak
+        """
+        from matplotlib.backends.backend_pdf import PdfPages
+        
+        pdf_path = self.output_dir / 'progressive_stripping_report.pdf'
+        
+        # Calculate number of pages needed (3 steps per page)
+        steps_per_page = 3
+        n_pages = (len(self.step_data) + steps_per_page - 1) // steps_per_page
+        
+        with PdfPages(pdf_path) as pdf:
+            # Title page
+            fig_title = plt.figure(figsize=(11, 8.5))
+            fig_title.text(0.5, 0.6, 'Progressive Layer Stripping Analysis', 
+                          ha='center', va='center', fontsize=24, fontweight='bold')
+            fig_title.text(0.5, 0.45, f'Total Steps: {len(self.step_data)}', 
+                          ha='center', va='center', fontsize=16)
+            fig_title.text(0.5, 0.35, f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}', 
+                          ha='center', va='center', fontsize=12, style='italic')
+            fig_title.text(0.5, 0.25, f'Source: {self.strip_dir}', 
+                          ha='center', va='center', fontsize=10, color='gray')
+            pdf.savefig(fig_title)
+            plt.close(fig_title)
+            
+            # Create pages with 3 steps each
+            for page_idx in range(n_pages):
+                start_idx = page_idx * steps_per_page
+                end_idx = min(start_idx + steps_per_page, len(self.step_data))
+                page_steps = self.step_data[start_idx:end_idx]
+                
+                # Create figure with grid for this page
+                fig = plt.figure(figsize=(11, 8.5))
+                
+                for row_idx, step_data in enumerate(page_steps):
+                    self._add_step_to_pdf_page(fig, step_data, row_idx, len(page_steps))
+                
+                # Add page number
+                fig.text(0.5, 0.02, f'Page {page_idx + 2} of {n_pages + 1}', 
+                        ha='center', fontsize=9, color='gray')
+                
+                fig.tight_layout(rect=[0, 0.03, 1, 0.97])
+                pdf.savefig(fig)
+                plt.close(fig)
+        
+        return pdf_path
+    
+    def _add_step_to_pdf_page(self, fig, step_data: Dict, row_idx: int, n_rows: int):
+        """Add a single step's plots to a PDF page row."""
+        # Calculate subplot positions (2 columns per row)
+        n_cols = 2
+        
+        # Calculate row height and position
+        row_height = 0.9 / n_rows
+        row_bottom = 0.9 - (row_idx + 1) * row_height + 0.05
+        
+        # Left subplot: HVSR Curve (wider)
+        ax_hv = fig.add_axes([0.08, row_bottom, 0.50, row_height - 0.08])
+        # Right subplot: Vs Profile (narrower)
+        ax_vs = fig.add_axes([0.62, row_bottom, 0.28, row_height - 0.08])
+        
+        step_name = step_data['name']
+        model_info = step_data.get('model', {})
+        hv_info = step_data.get('hv_data', {})
+        
+        # === Plot HVSR Curve (LEFT) ===
+        freqs = hv_info.get('frequencies', np.array([]))
+        amps = hv_info.get('amplitudes', np.array([]))
+        peak_freq = hv_info.get('peak_frequency', 0)
+        peak_amp = hv_info.get('peak_amplitude', 0)
+        
+        if len(freqs) > 0 and len(amps) > 0:
+            ax_hv.semilogx(freqs, amps, 'b-', linewidth=1.5, label='H/V')
+            
+            # Mark peak
+            if peak_freq > 0:
+                ax_hv.scatter(peak_freq, peak_amp, color='red', s=100, marker='*',
+                           edgecolors='darkred', linewidth=1, zorder=5)
+                ax_hv.axvline(x=peak_freq, color='red', linestyle='--', alpha=0.5)
+                ax_hv.text(0.95, 0.95, f'f0 = {peak_freq:.2f} Hz', 
+                        transform=ax_hv.transAxes, fontsize=9, fontweight='bold',
+                        ha='right', va='top', color='red',
+                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            
+            ax_hv.set_xlim(freqs[0], freqs[-1])
+        
+        ax_hv.set_xlabel('Frequency (Hz)', fontsize=9)
+        ax_hv.set_ylabel('H/V Amplitude', fontsize=9)
+        ax_hv.set_title(f'{step_name} - HVSR Curve', fontsize=10, fontweight='bold')
+        ax_hv.grid(True, alpha=0.3, which='both')
+        
+        # === Plot Vs Profile (RIGHT) ===
+        thicknesses = model_info.get('thicknesses', [])
+        vs_values = model_info.get('vs', [])
+        
+        if thicknesses and vs_values:
+            # Calculate depths
+            depths = [0]
+            for h in thicknesses:
+                if h > 0:
+                    depths.append(depths[-1] + h)
+                else:
+                    depths.append(depths[-1] + max(100, depths[-1] * 0.3))
+            
+            # Create step profile
+            plot_depths = []
+            plot_vs = []
+            for i in range(len(vs_values)):
+                plot_depths.extend([depths[i], depths[i + 1]])
+                plot_vs.extend([vs_values[i], vs_values[i]])
+            
+            # Plot
+            ax_vs.fill_betweenx(plot_depths, 0, plot_vs, alpha=0.3, color='teal')
+            ax_vs.step(plot_vs + [plot_vs[-1]], [0] + plot_depths, where='pre', 
+                      color='teal', linewidth=1.5, linestyle='-')
+            
+            # Highlight deepest interface
+            if len(depths) > 2:
+                deepest_depth = depths[-2]
+                ax_vs.axhline(y=deepest_depth, color='red', linestyle='-', alpha=0.6, linewidth=1.5)
+                # Compact annotation
+                ax_vs.text(0.95, 0.02, f'{deepest_depth:.0f}m', 
+                          transform=ax_vs.transAxes, fontsize=8, fontweight='bold',
+                          color='red', ha='right', va='bottom',
+                          bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8))
+            
+            ax_vs.set_xlim(0, max(plot_vs) * 1.2 if plot_vs else 1000)
+            ax_vs.invert_yaxis()
+        
+        ax_vs.set_xlabel('Vs (m/s)', fontsize=8)
+        ax_vs.set_ylabel('Depth (m)', fontsize=8)
+        ax_vs.set_title(f'{step_name} - Vs Profile', fontsize=9, fontweight='bold')
+        ax_vs.grid(True, alpha=0.3)
+        ax_vs.tick_params(axis='both', labelsize=7)
 
 
 __all__ = [

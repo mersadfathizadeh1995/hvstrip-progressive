@@ -19,16 +19,26 @@ import sys
 import time
 
 
+def _get_default_exe_path():
+    """Get default HVf executable path from hv_forward module."""
+    try:
+        from .hv_forward import DEFAULT_CONFIG
+        return DEFAULT_CONFIG["exe_path"]
+    except ImportError:
+        from hv_forward import DEFAULT_CONFIG
+        return DEFAULT_CONFIG["exe_path"]
+
+
 # Default configuration for the complete workflow
 DEFAULT_WORKFLOW_CONFIG = {
     # Stripper configuration
     "stripper": {
         "output_folder_name": "strip"
     },
-    
+
     # HV Forward modeling configuration
     "hv_forward": {
-        "exe_path": "HVf.exe",
+        "exe_path": _get_default_exe_path(),
         "fmin": 0.2,
         "fmax": 20.0,
         "nf": 71,
@@ -50,12 +60,7 @@ DEFAULT_WORKFLOW_CONFIG = {
     # Post-processing configuration
     "hv_postprocess": {
         "peak_detection": {
-            "method": "find_peaks",
-            "select": "leftmost",
-            "find_peaks_params": {"prominence": 0.2, "distance": 3},
-            "freq_min": 0.5,          # guard against edge picks at 0.2 Hz
-            "min_rel_height": 0.25,   # keep peaks with >=25% of global max
-            "exclude_first_n": 1      # ignore the very first frequency bin
+            "preset": "default",  # "default", "forward_modeling", "conservative", or "custom"
         },
         "hv_plot": {
             "x_axis_scale": "log",
@@ -90,7 +95,13 @@ DEFAULT_WORKFLOW_CONFIG = {
             "combined_filename": "combined_figure.png",
             "summary_filename": "step_summary.csv",
         }
-    }
+    },
+    
+    # Report generation configuration
+    "generate_report": True,  # Generate comprehensive analysis report
+    
+    # Interactive mode - skip post-processing for manual peak selection
+    "interactive_mode": False,
 }
 
 
@@ -214,11 +225,11 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
         raise FileNotFoundError(f"Initial model file not found: {initial_model_path}")
     
     print("=" * 80)
-    print("🚀 HVSR Progressive Layer Stripping - Complete Workflow")
+    print("[*] HVSR Progressive Layer Stripping - Complete Workflow")
     print("=" * 80)
-    print(f"📁 Initial model: {initial_model_path}")
-    print(f"📁 Output directory: {output_base_dir}")
-    print(f"⚙️  HVf executable: {config['hv_forward']['exe_path']}")
+    print(f"[>] Initial model: {initial_model_path}")
+    print(f"[>] Output directory: {output_base_dir}")
+    print(f"[>] HVf executable: {config['hv_forward']['exe_path']}")
     print("-" * 80)
     
     # Results dictionary
@@ -233,7 +244,7 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
         # =================================================================
         # STEP 1: LAYER STRIPPING
         # =================================================================
-        print("\n🔄 STEP 1/3: Layer Stripping")
+        print("\n[1/3] Layer Stripping")
         print("-" * 40)
         
         start_time = time.time()
@@ -252,12 +263,12 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
         )
         
         strip_time = time.time() - start_time
-        print(f"✅ Layer stripping completed in {strip_time:.2f}s")
-        print(f"📂 Strip directory: {strip_output_dir}")
+        print(f"[OK] Layer stripping completed in {strip_time:.2f}s")
+        print(f"[>] Strip directory: {strip_output_dir}")
         
         # Find all step folders
         step_folders = find_step_folders(Path(strip_output_dir))
-        print(f"📊 Generated {len(step_folders)} stripped models")
+        print(f"[>] Generated {len(step_folders)} stripped models")
         
         results["strip_directory"] = Path(strip_output_dir)
         results["step_folders"] = step_folders
@@ -265,7 +276,7 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
         # =================================================================
         # STEP 2: HV FORWARD MODELING
         # =================================================================
-        print(f"\n⚡ STEP 2/3: HV Forward Modeling")
+        print(f"\n[2/3] HV Forward Modeling")
         print("-" * 40)
         
         start_time = time.time()
@@ -281,12 +292,12 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
         
         for i, step_folder in enumerate(step_folders, 1):
             step_name = step_folder.name
-            print(f"  🔸 Processing {step_name} ({i}/{len(step_folders)})")
+            print(f"  [-] Processing {step_name} ({i}/{len(step_folders)})")
             
             # Find model file in step folder
             model_files = list(step_folder.glob("model_*.txt"))
             if not model_files:
-                print(f"    ❌ No model file found in {step_folder}")
+                print(f"    [!] No model file found in {step_folder}")
                 continue
             
             model_file = model_files[0]
@@ -309,7 +320,7 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
                 hv_csv_path = step_folder / "hv_curve.csv"
                 save_hv_csv(hv_csv_path, freqs, amps)
                 
-                print(f"    ✅ HV curve saved: {hv_csv_path.name}")
+                print(f"    [OK] HV curve saved: {hv_csv_path.name}")
                 successful_hv += 1
                 
                 # Store results
@@ -322,103 +333,146 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
                 }
                 
             except Exception as e:
-                print(f"    ❌ Error computing HV curve: {e}")
+                print(f"    [!] Error computing HV curve: {e}")
                 continue
         
         hv_time = time.time() - start_time
-        print(f"✅ HV forward modeling completed in {hv_time:.2f}s")
-        print(f"📊 Successfully processed {successful_hv}/{len(step_folders)} models")
+        print(f"[OK] HV forward modeling completed in {hv_time:.2f}s")
+        print(f"[>] Successfully processed {successful_hv}/{len(step_folders)} models")
         
         # =================================================================
-        # STEP 3: POST-PROCESSING
+        # STEP 3: POST-PROCESSING (skip if interactive mode)
         # =================================================================
-        print(f"\n📊 STEP 3/3: Post-Processing & Visualization")
-        print("-" * 40)
-        
-        start_time = time.time()
-        
-        # Import hv_postprocess module
-        try:
-            from .hv_postprocess import process
-        except ImportError:
-            from hv_postprocess import process
-        
-        postprocess_config = config["hv_postprocess"]
+        post_time = 0.0
         successful_post = 0
         
-        for i, step_folder in enumerate(step_folders, 1):
-            step_name = step_folder.name
-            print(f"  🔸 Post-processing {step_name} ({i}/{len(step_folders)})")
+        if config.get("interactive_mode", False):
+            print(f"\n[3/4] Post-Processing - SKIPPED (interactive mode)")
+            print("-" * 40)
+            print("[>] Post-processing will run after manual peak selection")
+            results["interactive_mode"] = True
+        else:
+            print(f"\n[3/4] Post-Processing & Visualization")
+            print("-" * 40)
             
-            # Check if we have both model and HV curve files
-            hv_csv = step_folder / "hv_curve.csv"
-            model_files = list(step_folder.glob("model_*.txt"))
+            start_time = time.time()
             
-            if not hv_csv.exists():
-                print(f"    ⚠️  No HV curve file found, skipping")
-                continue
+            # Import hv_postprocess module
+            try:
+                from .hv_postprocess import process
+            except ImportError:
+                from hv_postprocess import process
             
-            if not model_files:
-                print(f"    ⚠️  No model file found, skipping")
-                continue
+            postprocess_config = config["hv_postprocess"]
             
-            model_file = model_files[0]
+            for i, step_folder in enumerate(step_folders, 1):
+                step_name = step_folder.name
+                print(f"  [-] Post-processing {step_name} ({i}/{len(step_folders)})")
+                
+                # Check if we have both model and HV curve files
+                hv_csv = step_folder / "hv_curve.csv"
+                model_files = list(step_folder.glob("model_*.txt"))
+                
+                if not hv_csv.exists():
+                    print(f"    [!] No HV curve file found, skipping")
+                    continue
+                
+                if not model_files:
+                    print(f"    [!] No model file found, skipping")
+                    continue
+                
+                model_file = model_files[0]
+                
+                try:
+                    # Run post-processing
+                    post_results = process(
+                        str(hv_csv),
+                        str(model_file),
+                        str(step_folder),  # Output to same folder
+                        postprocess_config
+                    )
+                    
+                    print(f"    [OK] Generated {len([k for k in post_results.keys() if 'png' in k])} plots")
+                    successful_post += 1
+                    
+                    # Update results
+                    if step_name in results["step_results"]:
+                        results["step_results"][step_name].update(post_results)
+                    
+                except Exception as e:
+                    print(f"    [!] Error in post-processing: {e}")
+                    continue
+            
+            post_time = time.time() - start_time
+            print(f"[OK] Post-processing completed in {post_time:.2f}s")
+            print(f"[>] Successfully processed {successful_post}/{len(step_folders)} models")
+        
+        # =================================================================
+        # STEP 4: REPORT GENERATION (optional, skip if interactive mode)
+        # =================================================================
+        report_time = 0.0
+        if config.get("interactive_mode", False):
+            print(f"\n[4/4] Report Generation - SKIPPED (interactive mode)")
+            print("-" * 40)
+            print("[>] Report will be generated after manual peak selection")
+        elif config.get("generate_report", True):
+            print(f"\n[4/4] Report Generation")
+            print("-" * 40)
+            
+            start_time = time.time()
             
             try:
-                # Run post-processing
-                post_results = process(
-                    str(hv_csv),
-                    str(model_file),
-                    str(step_folder),  # Output to same folder
-                    postprocess_config
+                from .report_generator import ProgressiveStrippingReporter
+            except ImportError:
+                from report_generator import ProgressiveStrippingReporter
+            
+            try:
+                reporter = ProgressiveStrippingReporter(
+                    str(results["strip_directory"]),
+                    str(output_base_dir / "reports")
                 )
-                
-                print(f"    ✅ Generated {len([k for k in post_results.keys() if 'png' in k])} plots")
-                successful_post += 1
-                
-                # Update results
-                if step_name in results["step_results"]:
-                    results["step_results"][step_name].update(post_results)
-                
+                report_files = reporter.generate_comprehensive_report()
+                results["report_files"] = report_files
+                print(f"[OK] Report generation completed")
             except Exception as e:
-                print(f"    ❌ Error in post-processing: {e}")
-                continue
-        
-        post_time = time.time() - start_time
-        print(f"✅ Post-processing completed in {post_time:.2f}s")
-        print(f"📊 Successfully processed {successful_post}/{len(step_folders)} models")
+                print(f"[!] Error generating report: {e}")
+                results["report_error"] = str(e)
+            
+            report_time = time.time() - start_time
         
         # =================================================================
         # WORKFLOW SUMMARY
         # =================================================================
-        total_time = strip_time + hv_time + post_time
+        total_time = strip_time + hv_time + post_time + report_time
         
         print("\n" + "=" * 80)
-        print("🎉 WORKFLOW COMPLETED SUCCESSFULLY!")
+        print("WORKFLOW COMPLETED SUCCESSFULLY!")
         print("=" * 80)
-        print(f"⏱️  Total time: {total_time:.2f}s")
-        print(f"   ├─ Layer stripping: {strip_time:.2f}s")
-        print(f"   ├─ HV forward: {hv_time:.2f}s")
-        print(f"   └─ Post-processing: {post_time:.2f}s")
-        print(f"📊 Processed {len(step_folders)} stripped models")
-        print(f"📁 All outputs saved in: {output_base_dir}")
+        print(f"Total time: {total_time:.2f}s")
+        print(f"   - Layer stripping: {strip_time:.2f}s")
+        print(f"   - HV forward: {hv_time:.2f}s")
+        print(f"   - Post-processing: {post_time:.2f}s")
+        if report_time > 0:
+            print(f"   - Report generation: {report_time:.2f}s")
+        print(f"Processed {len(step_folders)} stripped models")
+        print(f"All outputs saved in: {output_base_dir}")
         
         # Summary of generated files
-        print(f"\n📋 Generated files per step:")
+        print(f"\nGenerated files per step:")
         for step_name, step_data in results["step_results"].items():
-            print(f"   📂 {step_name}:")
-            print(f"      ├─ model_*.txt")
-            print(f"      ├─ hv_curve.csv")
+            print(f"   [{step_name}]:")
+            print(f"      - model_*.txt")
+            print(f"      - hv_curve.csv")
             if 'hv_curve_png' in step_data:
-                print(f"      ├─ hv_curve.png")
+                print(f"      - hv_curve.png")
             if 'vs_profile_png' in step_data:
-                print(f"      ├─ vs_profile.png")
+                print(f"      - vs_profile.png")
             if 'combined_png' in step_data:
-                print(f"      ├─ combined_figure.png")
+                print(f"      - combined_figure.png")
             if 'summary_csv' in step_data:
-                print(f"      └─ summary.csv")
+                print(f"      - summary.csv")
         
-        print("\n✨ Ready for analysis!")
+        print("\nReady for analysis!")
         print("=" * 80)
         
         results["success"] = True
@@ -431,7 +485,7 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
         }
         
     except Exception as e:
-        print(f"\n❌ WORKFLOW FAILED: {e}")
+        print(f"\n[!] WORKFLOW FAILED: {e}")
         results["success"] = False
         results["error"] = str(e)
         raise
