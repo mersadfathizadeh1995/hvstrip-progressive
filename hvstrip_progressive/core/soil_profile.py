@@ -109,6 +109,45 @@ class Layer:
         return True, "Valid"
 
 
+def _parse_rho_model_format(rho_file: str):
+    """Parse density from HVf model format (n_layers header + rows: thickness vp vs density).
+    
+    Returns
+    -------
+    Tuple[List[Tuple[float, float, float]], float]
+        (segments as (d_start, d_end, density), halfspace_density)
+    """
+    try:
+        lines = Path(rho_file).read_text(encoding="utf-8", errors="ignore").splitlines()
+        # Strip comments and blanks
+        data_lines = [l.strip() for l in lines if l.strip() and not l.strip().startswith('#')]
+        if not data_lines:
+            return None, None
+        
+        n_layers = int(data_lines[0])
+        segments = []
+        hs_rho = None
+        depth = 0.0
+        
+        for i in range(1, min(n_layers + 1, len(data_lines))):
+            parts = data_lines[i].split()
+            if len(parts) < 4:
+                continue
+            thickness = float(parts[0])
+            density = float(parts[3])
+            
+            if thickness == 0:
+                # Half-space
+                hs_rho = density
+            else:
+                segments.append((depth, depth + thickness, density))
+                depth += thickness
+        
+        return segments if segments else None, hs_rho
+    except Exception:
+        return None, None
+
+
 @dataclass
 class SoilProfile:
     """
@@ -522,8 +561,8 @@ class SoilProfile:
 
             hs_val = pairs[-1][0] if pairs else 0
             for k in range(len(pairs) - 1, -1, -1):
-                if pairs[k][1] == math.inf and k > 0:
-                    hs_val = pairs[k - 1][0]
+                if pairs[k][1] == math.inf:
+                    hs_val = pairs[k][0]
                     break
 
             return segments, hs_val
@@ -551,6 +590,10 @@ class SoilProfile:
             rho_pairs = parse_step_pairs(rho_file)
             if rho_pairs:
                 rho_segments, hs_rho = segments_from_pairs(rho_pairs)
+            # If step-polyline parsing yielded no segments, try HVf model format
+            # (n_layers header, then rows: thickness vp vs density)
+            if not rho_segments:
+                rho_segments, hs_rho = _parse_rho_model_format(rho_file)
 
         breakpoints = {0.0}
         for segs in (vs_segments, vp_segments, rho_segments):
@@ -567,7 +610,7 @@ class SoilProfile:
         for i in range(len(depths) - 1):
             d0, d1 = depths[i], depths[i + 1]
             thickness = d1 - d0
-            if thickness <= 1e-12:
+            if thickness < 0.01:
                 continue
 
             mid = d0 + 0.5 * thickness
