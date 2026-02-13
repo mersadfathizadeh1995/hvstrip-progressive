@@ -1,0 +1,6 @@
+f0_Frequency_Hz,0.238878
+f0_Amplitude,4.266108
+f0_Index,7
+Secondary_1_Frequency_Hz,1.171343
+Secondary_1_Amplitude,3.328755
+Secondary_1_Index,54

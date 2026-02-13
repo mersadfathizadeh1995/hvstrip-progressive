@@ -15,7 +15,7 @@ class MatplotlibWidget(QWidget):
 
     def __init__(self, parent=None, figsize=(8, 6)):
         super().__init__(parent)
-        self.figure = Figure(figsize=figsize, tight_layout=True)
+        self.figure = Figure(figsize=figsize)
         self.canvas = FigureCanvas(self.figure)
         self.toolbar = NavigationToolbar(self.canvas, self)
 

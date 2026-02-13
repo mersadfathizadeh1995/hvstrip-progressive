@@ -91,7 +91,7 @@ class InteractivePeakPickerDialog(QDialog):
         right_layout.addWidget(self.info_label)
         
         # Matplotlib figure - wider aspect ratio (14:5)
-        self.figure = Figure(figsize=(14, 5), tight_layout=True)
+        self.figure = Figure(figsize=(14, 5))
         self.canvas = FigureCanvas(self.figure)
         self.toolbar = NavigationToolbar(self.canvas, self)
         
@@ -313,7 +313,10 @@ class InteractivePeakPickerDialog(QDialog):
                           ha='center', va='center', transform=ax_vs.transAxes, fontsize=10)
                 ax_vs.set_title('Vs', fontsize=11, fontweight='bold')
         
-        self.figure.tight_layout()
+        try:
+            self.figure.tight_layout()
+        except Exception:
+            pass
         self.canvas.draw()
         
         # Update selection label

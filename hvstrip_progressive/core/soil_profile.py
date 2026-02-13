@@ -712,6 +712,84 @@ class SoilProfile:
         
         return cls.from_dinver_files(vs_file, vp_file, rho_file, name)
 
+    @classmethod
+    def from_excel_file(cls, file_path: str, name: Optional[str] = None) -> "SoilProfile":
+        """
+        Load profile from Excel (.xlsx) file.
+
+        Parameters
+        ----------
+        file_path : str
+            Path to .xlsx file with columns:
+            Thickness (m) | Vs (m/s) | Vp (m/s) | Density (kg/m³).
+            Last row is halfspace (thickness = 0, '-', or empty).
+        name : str, optional
+            Profile name. Defaults to file stem.
+
+        Returns
+        -------
+        SoilProfile
+        """
+        import openpyxl
+
+        path = Path(file_path)
+        if name is None:
+            name = path.stem
+
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        ws = wb.active
+
+        rows = []
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i == 0:
+                continue
+            if all(v is None for v in row):
+                continue
+            rows.append(row)
+        wb.close()
+
+        if not rows:
+            raise ValueError(f"No data rows found in {path.name}")
+
+        profile = cls(name=name)
+        n_rows = len(rows)
+
+        for idx, row in enumerate(rows):
+            raw_h = row[0] if len(row) > 0 else None
+            raw_vs = row[1] if len(row) > 1 else None
+            raw_vp = row[2] if len(row) > 2 else None
+            raw_rho = row[3] if len(row) > 3 else None
+
+            vs = float(raw_vs) if raw_vs is not None else 0.0
+            vp = float(raw_vp) if raw_vp is not None else None
+            density = float(raw_rho) if raw_rho is not None else None
+
+            is_last = idx == n_rows - 1
+            is_hs = False
+            thickness = 0.0
+
+            if is_last:
+                if raw_h is None or str(raw_h).strip() in ('', '0', '-', '0.0'):
+                    is_hs = True
+                else:
+                    h_val = float(raw_h)
+                    if h_val <= 0:
+                        is_hs = True
+                    else:
+                        thickness = h_val
+            else:
+                thickness = float(raw_h) if raw_h is not None else 0.0
+
+            profile.add_layer(Layer(
+                thickness=thickness,
+                vs=vs,
+                vp=vp,
+                density=density,
+                is_halfspace=is_hs,
+            ))
+
+        return profile
+
     def save_hvf(self, file_path: str) -> None:
         """Save profile to HVf format file."""
         path = Path(file_path)
