@@ -350,3 +350,65 @@ class TestMultiProfileDialog:
         dialog._wait_for_workers()
         dialog.close()
         page.close()
+
+    def test_load_output_folder(self, qapp):
+        """Load an existing output folder and verify profiles + median are parsed."""
+        from hvstrip_progressive.gui.dialogs.output_viewer_dialog import (
+            load_output_folder, OutputViewerDialog,
+        )
+        from hvstrip_progressive.gui.dialogs.multi_profile_dialog import FigureSettings
+
+        output_dir = Path(
+            r"D:\Research\Narm_Afzar\hvstrip-progressive"
+            r"\hvstrip_progressive\Example\profiles_Input\output8"
+        )
+        if not output_dir.exists():
+            pytest.skip(f"Output folder not found: {output_dir}")
+
+        results, median = load_output_folder(output_dir)
+        assert len(results) == 10, f"Expected 10 profiles, got {len(results)}"
+        for r in results:
+            assert r.freqs is not None
+            assert r.amps is not None
+            assert r.f0 is not None, f"{r.name} missing f0"
+            print(f"  {r.name}: f0={r.f0[0]:.3f} Hz, secs={len(r.secondary_peaks)}")
+
+        assert median is not None, "Median should be loaded"
+        assert median.freqs is not None
+        assert median.f0 is not None, "Median f0 missing"
+        print(f"  Median: f0={median.f0[0]:.3f} Hz, secs={len(median.secondary_peaks)}")
+
+        # Open viewer dialog
+        s = FigureSettings()
+        viewer = OutputViewerDialog(results, median, s, str(output_dir))
+        qapp.processEvents()
+
+        # Toggle median off via tree
+        from PySide6.QtCore import Qt
+        viewer._tree_median.setCheckState(0, Qt.Unchecked)
+        qapp.processEvents()
+        viewer._tree_median.setCheckState(0, Qt.Checked)
+        qapp.processEvents()
+
+        # Toggle individual peaks off
+        viewer._tree_prof_f0.setCheckState(0, Qt.Unchecked)
+        qapp.processEvents()
+        viewer._tree_prof_sec.setCheckState(0, Qt.Unchecked)
+        qapp.processEvents()
+
+        # Turn them back on
+        viewer._tree_prof_f0.setCheckState(0, Qt.Checked)
+        viewer._tree_prof_sec.setCheckState(0, Qt.Checked)
+        qapp.processEvents()
+
+        # Toggle median peaks only
+        viewer._tree_med_peaks.setCheckState(0, Qt.Unchecked)
+        qapp.processEvents()
+
+        # Change palette and peak alpha
+        viewer.palette_combo.setCurrentText("Blues")
+        viewer.peak_alpha_spin.setValue(0.5)
+        viewer.alpha_spin.setValue(0.8)
+        qapp.processEvents()
+
+        viewer.close()

@@ -24,6 +24,7 @@ from ..dialogs.multi_profile_dialog import (
     get_palette_colors, _PALETTE_NAMES, _MARKER_COLORS, _MARKER_SHAPES,
     _darken_color,
 )
+from ..dialogs.output_viewer_dialog import OutputViewerDialog, load_output_folder
 from ...core.soil_profile import SoilProfile, Layer
 from ...core.velocity_utils import VelocityConverter
 from ...core.hv_forward import compute_hv_curve
@@ -556,18 +557,63 @@ class ForwardModelingPage(QWidget):
 
         layout.addWidget(fig_group)
 
-        # Run button
+        # Action buttons row
+        btn_row = QHBoxLayout()
+
         self.btn_run_multi = QPushButton("Run All Profiles")
         self.btn_run_multi.setStyleSheet(
             "background-color: #0078d4; color: white; padding: 8px 16px; font-size: 13px;"
         )
         self.btn_run_multi.clicked.connect(self._run_multi_profiles)
-        layout.addWidget(self.btn_run_multi)
+        btn_row.addWidget(self.btn_run_multi)
+
+        self.btn_load_output = QPushButton("Load Results Folder")
+        self.btn_load_output.setStyleSheet(
+            "background-color: #107c10; color: white; padding: 8px 16px; font-size: 13px;"
+        )
+        self.btn_load_output.setToolTip(
+            "Open a previously saved output folder to view combined curves"
+        )
+        self.btn_load_output.clicked.connect(self._load_multi_output)
+        btn_row.addWidget(self.btn_load_output)
+
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
 
         self.multi_status = QLabel("")
         layout.addWidget(self.multi_status)
 
         return widget
+
+    def _load_multi_output(self):
+        """Open a saved output folder and display combined curves in a viewer."""
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select Output Folder with Profile Subfolders"
+        )
+        if not folder:
+            return
+
+        folder_path = Path(folder)
+        results, median_result = load_output_folder(folder_path)
+
+        if not results:
+            QMessageBox.warning(
+                self, "No Data Found",
+                f"No profile subfolders with hv_curve.csv found in:\n{folder}"
+            )
+            return
+
+        fig_settings = self._get_fig_settings()
+        self.multi_status.setText(
+            f"Loaded {len(results)} profiles from {folder_path.name}"
+        )
+        self.multi_status.setStyleSheet("color: green; font-weight: bold;")
+
+        dialog = OutputViewerDialog(
+            results, median_result, fig_settings,
+            source_folder=folder, parent=self,
+        )
+        dialog.exec()
 
     def _multi_add_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
