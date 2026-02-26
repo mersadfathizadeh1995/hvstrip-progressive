@@ -90,11 +90,11 @@ class HVOverlaySettingsPanel(_BaseSettingsPanel):
         self.marker_size = self._spin_int(4, 20, 8)
         self._row("Peak marker size:", self.marker_size, lay)
 
-        self.fmin = self._spin_float(0.01, 50.0, 0.0, 0.1)
+        self.fmin = self._spin_float(0.0, 50.0, 0.0, 0.1)
         self.fmin.setSpecialValueText("auto")
         self._row("X min (Hz):", self.fmin, lay)
 
-        self.fmax = self._spin_float(0.01, 100.0, 0.0, 1.0)
+        self.fmax = self._spin_float(0.0, 100.0, 0.0, 1.0)
         self.fmax.setSpecialValueText("auto")
         self._row("X max (Hz):", self.fmax, lay)
 

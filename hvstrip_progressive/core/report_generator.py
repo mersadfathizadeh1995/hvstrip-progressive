@@ -798,6 +798,8 @@ class ProgressiveStrippingReporter:
             ax.set_xscale('log')
         if grid:
             ax.grid(True, alpha=0.3, which='both')
+        else:
+            ax.grid(False)
         ax.set_xlabel('Frequency (Hz)', fontsize=font, weight='bold')
         ax.set_ylabel('H/V Amplitude Ratio', fontsize=font, weight='bold')
         ax.set_title('Progressive Layer Stripping: HV Curves Evolution',
@@ -838,6 +840,8 @@ class ProgressiveStrippingReporter:
         ax1.set_title('Peak Evolution', fontsize=font + 1, weight='bold')
         if grid:
             ax1.grid(True, alpha=0.3)
+        else:
+            ax1.grid(False)
 
         ax2 = fig.add_subplot(3, 1, 2)
         ax2.plot(steps, peak_amps, 'o-', lw=lw, ms=ms, color='darkred')
@@ -846,6 +850,8 @@ class ProgressiveStrippingReporter:
         ax2.set_ylabel('Peak Amplitude', fontsize=font, weight='bold')
         if grid:
             ax2.grid(True, alpha=0.3)
+        else:
+            ax2.grid(False)
 
         ax3 = fig.add_subplot(3, 1, 3)
         colors_bar = ['green' if x >= 0 else 'red' for x in freq_shifts]
@@ -855,6 +861,8 @@ class ProgressiveStrippingReporter:
         ax3.set_ylabel('Freq Shift (%)', fontsize=font, weight='bold')
         if grid:
             ax3.grid(True, alpha=0.3, axis='y')
+        else:
+            ax3.grid(False)
 
         try:
             fig.tight_layout()
@@ -906,6 +914,8 @@ class ProgressiveStrippingReporter:
         for ax in (ax1, ax2):
             if grid:
                 ax.grid(True, alpha=0.3)
+            else:
+                ax.grid(False)
         try:
             fig.tight_layout()
         except Exception:
@@ -955,6 +965,8 @@ class ProgressiveStrippingReporter:
             ax.set_xscale('log')
         if grid:
             ax.grid(True, alpha=0.3, which='both')
+        else:
+            ax.grid(False)
         ax.set_xlabel('Frequency (Hz)', fontsize=font, weight='bold')
         ax.set_ylabel('Normalized H/V (offset)', fontsize=font, weight='bold')
         ax.set_title('Waterfall View', fontsize=font + 2, weight='bold')
@@ -995,6 +1007,8 @@ class ProgressiveStrippingReporter:
         ax1.set_title('(a) HVSR Evolution', fontweight='bold', fontsize=font)
         if grid:
             ax1.grid(True, alpha=0.3)
+        else:
+            ax1.grid(False)
         ax1.legend(fontsize=max(font - 2, 6))
 
         # (b) Peak frequency
@@ -1006,6 +1020,8 @@ class ProgressiveStrippingReporter:
         ax2.set_title('(b) Peak Evolution', fontweight='bold', fontsize=font)
         if grid:
             ax2.grid(True, alpha=0.3)
+        else:
+            ax2.grid(False)
 
         # (c) Impedance
         contrasts = self.analysis.get('interface_contrasts', [])
@@ -1019,6 +1035,8 @@ class ProgressiveStrippingReporter:
         ax3.set_title('(c) Interface Profile', fontweight='bold', fontsize=font)
         if grid:
             ax3.grid(True, alpha=0.3)
+        else:
+            ax3.grid(False)
 
         # (d) Summary table
         ax4.axis('off')

@@ -68,7 +68,10 @@ class FigureWizardDialog(QDialog):
             self._reporter = ProgressiveStrippingReporter(
                 self._strip_dir, self._output_dir,
             )
-        except Exception:
+        except Exception as exc:
+            import traceback
+            print(f"[FigureWizard] Reporter init failed: {exc}")
+            traceback.print_exc()
             self._reporter = None
 
     # ------------------------------------------------------------------ UI

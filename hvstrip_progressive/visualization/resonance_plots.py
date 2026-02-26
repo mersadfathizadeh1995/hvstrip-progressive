@@ -323,6 +323,8 @@ def _draw_hv_panel(ax, freqs0, amps0, freqs1, amps1, f0, a0, f1, a1, **kw):
     ax.set_title("(a) Resonance Mode Separation", fontsize=fs + 2, fontweight="bold", pad=15)
     if grid:
         ax.grid(True, which="both", alpha=0.3)
+    else:
+        ax.grid(False)
     ax.legend(fontsize=max(fs - 2, 8), loc="lower left", frameon=True, framealpha=0.95)
     ax.set_xlim(0.2, 20.0)
 
@@ -380,6 +382,8 @@ def _draw_vs_panel(ax, layers: List[Dict], n_kept: int, **kw):
     ax.set_title("(b) Progressive Stripping", fontsize=fs + 2, fontweight="bold", pad=15)
     if grid:
         ax.grid(True, alpha=0.3, which="major", ls="--")
+    else:
+        ax.grid(False)
     ax.set_xlim(0, max_vs * 2.0)
     ax.set_ylim(max_depth, 0)
 
