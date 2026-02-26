@@ -8,11 +8,13 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel,
     QPushButton, QFileDialog, QLineEdit, QTextEdit, QSplitter,
     QTabWidget, QSpinBox, QDoubleSpinBox, QCheckBox, QComboBox,
-    QScrollArea, QGridLayout, QFrame
+    QScrollArea, QGridLayout, QFrame, QMessageBox,
 )
 from PySide6.QtCore import Qt, Signal, QThread
 
 from ..widgets.plot_widget import MatplotlibWidget
+from ...core.dual_resonance import extract_dual_resonance
+from ...visualization.resonance_plots import draw_resonance_separation
 
 
 class VisualizationPage(QWidget):
@@ -190,14 +192,38 @@ class VisualizationPage(QWidget):
         self.peak_plot = MatplotlibWidget(figsize=(8, 6))
         self.plot_tabs.addTab(self.peak_plot, "Peak Evolution")
 
+        self.dual_plot = MatplotlibWidget(figsize=(15, 9))
+        self.plot_tabs.addTab(self.dual_plot, "Dual-Resonance")
+
         right_layout.addWidget(self.plot_tabs)
 
         btn_layout = QHBoxLayout()
         btn_refresh = QPushButton("Refresh Plot")
         btn_refresh.clicked.connect(self._refresh_current_plot)
         btn_layout.addWidget(btn_refresh)
-        
+
+        self.btn_dual = QPushButton("Run Dual-Resonance")
+        self.btn_dual.setStyleSheet(
+            "background-color: #0078d4; color: white; "
+            "padding: 6px 14px; font-size: 12px;"
+        )
+        self.btn_dual.setToolTip(
+            "Extract f0/f1 from the stripping results directory"
+        )
+        self.btn_dual.clicked.connect(self._run_dual_resonance)
+        btn_layout.addWidget(self.btn_dual)
+
+        self.btn_export_dual = QPushButton("Export Dual-Resonance")
+        self.btn_export_dual.clicked.connect(self._export_dual_resonance)
+        self.btn_export_dual.setEnabled(False)
+        btn_layout.addWidget(self.btn_export_dual)
+
         btn_layout.addStretch()
+
+        self.dual_info = QLabel("")
+        self.dual_info.setWordWrap(True)
+        btn_layout.addWidget(self.dual_info)
+
         right_layout.addLayout(btn_layout)
 
         splitter.addWidget(right_panel)
@@ -257,6 +283,106 @@ class VisualizationPage(QWidget):
                 fig = current_widget.get_figure()
                 fig.savefig(path, dpi=self.dpi_spin.value(), bbox_inches='tight')
 
+    def _run_dual_resonance(self):
+        """Run dual-resonance analysis on the strip directory."""
+        strip_dir = self._resolve_strip_dir()
+        if not strip_dir:
+            QMessageBox.warning(
+                self, "No Strip Directory",
+                "Please set the Results Dir to a folder that contains "
+                "a 'strip/' subdirectory with Step folders,\n"
+                "or point directly to the strip/ folder.",
+            )
+            return
+
+        # Draw the separation figure into the widget
+        fig = self.dual_plot.get_figure()
+        ok = draw_resonance_separation(str(strip_dir), fig)
+        if not ok:
+            self._draw_placeholder(
+                self.dual_plot,
+                "Could not generate dual-resonance figure.\n"
+                "Ensure the strip folder has Step0 and Step1 "
+                "with hv_curve.csv files.",
+            )
+            self.dual_info.setText("")
+            return
+        self.dual_plot.refresh()
+
+        # Run the extraction for numeric results
+        result = extract_dual_resonance(str(strip_dir))
+        if result.success:
+            sep = "Yes" if result.separation_success else "No"
+            self.dual_info.setText(
+                f"f0 = {result.f0:.3f} Hz  |  "
+                f"f1 = {result.f1:.3f} Hz  |  "
+                f"Ratio = {result.freq_ratio:.2f}  |  "
+                f"Separated: {sep}"
+            )
+            self.dual_info.setStyleSheet(
+                "color: #107c10; font-weight: bold; font-size: 11px;"
+            )
+        else:
+            self.dual_info.setText(f"Error: {result.error_message}")
+            self.dual_info.setStyleSheet("color: red;")
+
+        self.btn_export_dual.setEnabled(True)
+        self.plot_tabs.setCurrentWidget(self.dual_plot)
+
+    def _resolve_strip_dir(self) -> Path | None:
+        """Find the strip directory from the results path."""
+        results_dir = self.results_edit.text().strip()
+        if not results_dir:
+            return None
+        p = Path(results_dir)
+        if not p.exists():
+            return None
+        # If user pointed directly to the strip/ folder
+        if any(p.glob("Step*_*-layer")):
+            return p
+        # If user pointed to the parent output dir
+        strip_sub = p / "strip"
+        if strip_sub.exists() and any(strip_sub.glob("Step*_*-layer")):
+            return strip_sub
+        return None
+
+    def _export_dual_resonance(self):
+        """Export the dual-resonance figure and CSV results."""
+        strip_dir = self._resolve_strip_dir()
+        if not strip_dir:
+            return
+        path = QFileDialog.getExistingDirectory(
+            self, "Select Export Directory",
+        )
+        if not path:
+            return
+
+        out = Path(path)
+        dpi = self.dpi_spin.value()
+        fmt = self.format_combo.currentText().lower()
+
+        # Save figure
+        from ...visualization.resonance_plots import plot_resonance_separation
+        fig_path = plot_resonance_separation(
+            str(strip_dir),
+            str(out / f"dual_resonance.{fmt}"),
+            dpi=dpi,
+        )
+
+        # Save CSV
+        from ...core.dual_resonance import save_results_csv
+        result = extract_dual_resonance(str(strip_dir))
+        csv_path = out / "dual_resonance.csv"
+        save_results_csv([result], str(csv_path))
+
+        saved = [str(csv_path)]
+        if fig_path:
+            saved.append(fig_path)
+        QMessageBox.information(
+            self, "Exported",
+            f"Saved {len(saved)} files to:\n{path}",
+        )
+
     def _export_all(self):
         path = QFileDialog.getExistingDirectory(self, "Select Export Directory")
         if path:
@@ -268,6 +394,7 @@ class VisualizationPage(QWidget):
                 (self.vs_plot, "vs_profile"),
                 (self.overlay_plot, "hv_overlay"),
                 (self.peak_plot, "peak_evolution"),
+                (self.dual_plot, "dual_resonance"),
             ]
             
             for widget, name in exports:

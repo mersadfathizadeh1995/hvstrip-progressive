@@ -6,82 +6,14 @@ from pathlib import Path
 from typing import Dict, Tuple, Optional, List
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.signal import savgol_filter, find_peaks, peak_prominences
+from scipy.signal import savgol_filter
 
-
-# Peak Detection Presets
-PEAK_DETECTION_PRESETS = {
-    "default": {
-        "method": "find_peaks",
-        "select": "leftmost",
-        "find_peaks_params": {"prominence": 0.2, "distance": 3},
-        "freq_min": 0.5,
-        "freq_max": None,
-        "min_rel_height": 0.25,
-        "exclude_first_n": 1,
-        "min_amplitude": None,
-    },
-    "forward_modeling": {
-        "method": "find_peaks",
-        "select": "leftmost",
-        "find_peaks_params": {"prominence": 0.1, "distance": 2},
-        "freq_min": 0.3,
-        "freq_max": None,
-        "min_rel_height": 0.15,
-        "exclude_first_n": 1,
-        "min_amplitude": 1.5,
-        "check_clarity_ratio": True,
-        "clarity_ratio_threshold": 1.5,
-    },
-    "conservative": {
-        "method": "find_peaks",
-        "select": "max",
-        "find_peaks_params": {"prominence": 0.5, "distance": 5},
-        "freq_min": 0.5,
-        "freq_max": None,
-        "min_rel_height": 0.3,
-        "exclude_first_n": 1,
-        "min_amplitude": 2.0,
-    },
-    "forward_modeling_sharp": {
-        "method": "find_peaks",
-        "select": "leftmost_sharpest",
-        "find_peaks_params": {"prominence": 0.1, "distance": 2},
-        "freq_min": 0.3,
-        "freq_max": None,
-        "min_rel_height": 0.15,
-        "exclude_first_n": 1,
-        "min_amplitude": 1.5,
-    },
-}
-
-
-def get_peak_detection_preset(preset_name: str) -> Dict:
-    """Get peak detection configuration by preset name.
-    
-    Parameters
-    ----------
-    preset_name : str
-        One of 'default', 'forward_modeling', 'conservative', or 'custom'.
-        For 'custom', returns minimal config that should be merged with user settings.
-    
-    Returns
-    -------
-    Dict
-        Peak detection configuration dictionary.
-    """
-    if preset_name == "custom":
-        return {
-            "method": "find_peaks",
-            "select": "leftmost",
-            "find_peaks_params": {"prominence": 0.2, "distance": 3},
-            "freq_min": None,
-            "freq_max": None,
-            "min_rel_height": 0.0,
-            "exclude_first_n": 0,
-            "min_amplitude": None,
-        }
-    return PEAK_DETECTION_PRESETS.get(preset_name, PEAK_DETECTION_PRESETS["default"]).copy()
+from .peak_detection import (
+    PEAK_DETECTION_PRESETS,
+    get_peak_detection_preset,
+    detect_peak,
+    find_all_peaks,
+)
 
 
 DEFAULT_CONFIG = {
@@ -169,156 +101,6 @@ def read_model(path: Path) -> Dict:
     
     return {'n_layers': n_layers, 'layers': layers, 'step_info': step_info}
 
-
-def detect_peak(freqs: np.ndarray, amps: np.ndarray, config: Dict) -> Tuple[float, float, int]:
-    """Detect peak using configured method.
-
-    Supports:
-    - method 'manual': pick closest to manual_frequency
-    - method 'find_peaks': detect local peaks and select either highest ('max')
-      or 'leftmost' (lowest-frequency) among candidates. Optional freq_min/freq_max
-      constrain candidate peaks.
-    - method 'max' (default): global maximum amplitude, optionally constrained
-      by freq_min/freq_max if provided.
-    
-    Preset modes: 'default', 'forward_modeling', 'conservative', 'custom'
-    """
-    peak_cfg = config.get('peak_detection', {})
-    
-    # Check if using preset mode
-    preset = peak_cfg.get('preset', None)
-    if preset and preset != 'custom':
-        preset_cfg = get_peak_detection_preset(preset)
-        # Merge preset with any explicit overrides from config
-        for key, val in peak_cfg.items():
-            if key != 'preset' and val is not None:
-                preset_cfg[key] = val
-        peak_cfg = preset_cfg
-    
-    method = peak_cfg.get('method', 'max')
-    select = peak_cfg.get('select', 'max')
-    fmin = peak_cfg.get('freq_min', None)
-    fmax = peak_cfg.get('freq_max', None)
-    min_rel = float(peak_cfg.get('min_rel_height', 0.0) or 0.0)
-    excl_n = int(peak_cfg.get('exclude_first_n', 0) or 0)
-    min_amp = peak_cfg.get('min_amplitude', None)
-    check_clarity = peak_cfg.get('check_clarity_ratio', False)
-    clarity_thr = float(peak_cfg.get('clarity_ratio_threshold', 1.5) or 1.5)
-
-    # Helper to limit indices by frequency window
-    def _apply_freq_window(idxs: np.ndarray) -> np.ndarray:
-        if idxs is None or len(idxs) == 0:
-            return idxs
-        mask = np.ones(len(idxs), dtype=bool)
-        if fmin is not None:
-            mask &= freqs[idxs] >= float(fmin)
-        if fmax is not None:
-            mask &= freqs[idxs] <= float(fmax)
-        return idxs[mask]
-    
-    # Helper to check clarity ratio (peak > threshold * amp at f0/2 and 2*f0)
-    def _check_clarity(peak_idx: int, peak_freq: float, peak_amp: float) -> bool:
-        if not check_clarity:
-            return True
-        # Find amplitude at f0/2 and 2*f0
-        half_freq = peak_freq / 2.0
-        double_freq = peak_freq * 2.0
-        
-        idx_half = np.argmin(np.abs(freqs - half_freq)) if half_freq >= freqs[0] else None
-        idx_double = np.argmin(np.abs(freqs - double_freq)) if double_freq <= freqs[-1] else None
-        
-        if idx_half is not None:
-            amp_half = amps[idx_half]
-            if peak_amp < clarity_thr * amp_half:
-                return False
-        if idx_double is not None:
-            amp_double = amps[idx_double]
-            if peak_amp < clarity_thr * amp_double:
-                return False
-        return True
-    
-    # Helper to apply minimum amplitude filter
-    def _apply_min_amplitude(idxs: np.ndarray) -> np.ndarray:
-        if min_amp is None or idxs is None or len(idxs) == 0:
-            return idxs
-        return idxs[amps[idxs] >= float(min_amp)]
-
-    if method == 'manual' and peak_cfg.get('manual_frequency'):
-        f_manual = float(peak_cfg['manual_frequency'])
-        idx = int(np.argmin(np.abs(freqs - f_manual)))
-        return float(freqs[idx]), float(amps[idx]), idx
-
-    if method == 'find_peaks':
-        params = peak_cfg.get('find_peaks_params', {})
-        peaks, _ = find_peaks(amps, **params)
-        peaks = np.array(peaks, dtype=int)
-        # Exclude first N bins if requested
-        if excl_n > 0 and peaks.size > 0:
-            peaks = peaks[peaks >= excl_n]
-        # Apply frequency window if any
-        peaks = _apply_freq_window(peaks)
-        # Apply relative height threshold if requested
-        if min_rel > 0 and peaks is not None and len(peaks) > 0:
-            amax = float(np.max(amps)) if len(amps) else 0.0
-            thr = amax * min_rel
-            peaks = peaks[amps[peaks] >= thr]
-        # Apply minimum absolute amplitude filter
-        peaks = _apply_min_amplitude(peaks)
-        # Apply clarity ratio check if enabled
-        if check_clarity and peaks is not None and len(peaks) > 0:
-            valid_peaks = []
-            for p in peaks:
-                if _check_clarity(p, freqs[p], amps[p]):
-                    valid_peaks.append(p)
-            peaks = np.array(valid_peaks, dtype=int) if valid_peaks else np.array([], dtype=int)
-        
-        if peaks is not None and len(peaks) > 0:
-            select_lower = str(select).lower()
-            if select_lower == 'leftmost':
-                idx = int(peaks[np.argmin(freqs[peaks])])
-            elif select_lower == 'sharpest':
-                # Select peak with highest prominence (sharpness)
-                proms, _, _ = peak_prominences(amps, peaks)
-                idx = int(peaks[np.argmax(proms)])
-            elif select_lower == 'leftmost_sharpest':
-                # Among peaks with prominence >= 50% of max prominence, pick leftmost
-                proms, _, _ = peak_prominences(amps, peaks)
-                max_prom = np.max(proms) if len(proms) > 0 else 0
-                sharp_threshold = max_prom * 0.5
-                sharp_peaks = peaks[proms >= sharp_threshold]
-                if len(sharp_peaks) > 0:
-                    idx = int(sharp_peaks[np.argmin(freqs[sharp_peaks])])
-                else:
-                    idx = int(peaks[np.argmin(freqs[peaks])])
-            else:  # 'max' or anything else falls back to highest amplitude
-                idx = int(peaks[np.argmax(amps[peaks])])
-            return float(freqs[idx]), float(amps[idx]), idx
-        # Fallback: no peaks met constraints; fall back to max below.
-
-    # Default/global max, with optional frequency constraints
-    if fmin is not None or fmax is not None or excl_n > 0 or min_rel > 0:
-        mask = np.ones_like(freqs, dtype=bool)
-        if fmin is not None:
-            mask &= freqs >= float(fmin)
-        if fmax is not None:
-            mask &= freqs <= float(fmax)
-        if excl_n > 0:
-            idxs = np.arange(len(freqs))
-            mask &= idxs >= excl_n
-        cand = np.where(mask)[0]
-        if cand.size > 0:
-            if min_rel > 0:
-                amax = float(np.max(amps)) if len(amps) else 0.0
-                thr = amax * min_rel
-                cand2 = cand[amps[cand] >= thr]
-                cand = cand2 if cand2.size > 0 else cand
-            # Apply minimum absolute amplitude filter
-            cand = _apply_min_amplitude(cand)
-            if cand is not None and len(cand) > 0:
-                idx_local = int(cand[np.argmax(amps[cand])])
-                return float(freqs[idx_local]), float(amps[idx_local]), idx_local
-    idx = int(np.argmax(amps))
-    return float(freqs[idx]), float(amps[idx]), idx
 
 
 def apply_smoothing(amps: np.ndarray, config: Dict) -> np.ndarray:
@@ -564,8 +346,11 @@ def process(hv_csv_path: str, model_txt_path: str, output_dir: str,
 __all__ = [
     "process",
     "detect_peak",
+    "find_all_peaks",
+    "get_peak_detection_preset",
+    "PEAK_DETECTION_PRESETS",
     "apply_smoothing",
     "read_hv_csv",
     "read_model",
-    "DEFAULT_CONFIG"
+    "DEFAULT_CONFIG",
 ]

@@ -97,6 +97,16 @@ DEFAULT_WORKFLOW_CONFIG = {
         }
     },
     
+    # Engine selection (default: diffuse_field)
+    "engine_name": "diffuse_field",
+
+    # Dual-resonance analysis (optional)
+    "dual_resonance": {
+        "enable": False,
+        "separation_ratio_threshold": 1.2,
+        "separation_shift_threshold": 0.3,
+    },
+
     # Report generation configuration
     "generate_report": True,  # Generate comprehensive analysis report
     
@@ -192,7 +202,8 @@ def _compute_hv_curve_adaptive(model_path: str, cfg: Dict, compute_func):
         passes += 1
 
 def run_complete_workflow(initial_model_path: str, output_base_dir: str, 
-                         workflow_config: Optional[Dict] = None) -> Dict[str, any]:
+                         workflow_config: Optional[Dict] = None,
+                         engine_name: str = None) -> Dict[str, any]:
     """
     Run the complete progressive layer stripping workflow.
     
@@ -219,6 +230,10 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
     config = DEFAULT_WORKFLOW_CONFIG.copy()
     if workflow_config:
         config = deep_update(config, workflow_config)
+    
+    # Allow explicit engine_name to override config
+    if engine_name is not None:
+        config["engine_name"] = engine_name
     
     # Validate initial model
     if not initial_model_path.exists():
@@ -314,7 +329,9 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
                     step_cfg["fmax"] = max(float(hv_forward_config.get("fmax", 20.0)) * 2.0, 40.0)
 
                 # Compute with adaptive scanning if enabled
-                (freqs, amps), used_cfg = _compute_hv_curve_adaptive(str(model_file), step_cfg, compute_hv_curve)
+                engine = config.get("engine_name", "diffuse_field")
+                compute_fn = lambda mp, cfg: compute_hv_curve(mp, cfg, engine_name=engine)
+                (freqs, amps), used_cfg = _compute_hv_curve_adaptive(str(model_file), step_cfg, compute_fn)
                 
                 # Save HV curve in same folder as model
                 hv_csv_path = step_folder / "hv_curve.csv"
@@ -323,14 +340,28 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
                 print(f"    [OK] HV curve saved: {hv_csv_path.name}")
                 successful_hv += 1
                 
+                # Compute Vs average for this step
+                vs_avg_result = None
+                try:
+                    from .vs_average import vs_average_from_model_file
+                    vs_avg_result = vs_average_from_model_file(
+                        str(model_file), target_depth=30.0,
+                    )
+                except Exception:
+                    pass
+
                 # Store results
-                results["step_results"][step_name] = {
+                step_result = {
                     "model_file": model_file,
                     "hv_csv": hv_csv_path,
                     "n_frequencies": len(freqs),
                     "peak_amplitude": float(max(amps)),
-                    "peak_frequency": float(freqs[list(amps).index(max(amps))])
+                    "peak_frequency": float(freqs[list(amps).index(max(amps))]),
                 }
+                if vs_avg_result is not None:
+                    step_result["vs30"] = vs_avg_result.vs_avg
+                    step_result["vs30_extrapolated"] = vs_avg_result.extrapolated
+                results["step_results"][step_name] = step_result
                 
             except Exception as e:
                 print(f"    [!] Error computing HV curve: {e}")
@@ -441,9 +472,62 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
             report_time = time.time() - start_time
         
         # =================================================================
+        # STEP 5: DUAL-RESONANCE ANALYSIS (optional)
+        # =================================================================
+        dual_time = 0.0
+        dr_cfg = config.get("dual_resonance", {})
+        if dr_cfg.get("enable", False) and not config.get("interactive_mode", False):
+            print(f"\n[5/5] Dual-Resonance Analysis")
+            print("-" * 40)
+
+            start_time = time.time()
+            try:
+                from .dual_resonance import (
+                    extract_dual_resonance,
+                    save_results_csv as dr_save_csv,
+                )
+                from ..visualization.resonance_plots import plot_resonance_separation
+
+                dr_result = extract_dual_resonance(
+                    str(results["strip_directory"]),
+                    profile_name=initial_model_path.stem,
+                    profile_path=str(initial_model_path),
+                )
+                results["dual_resonance"] = dr_result
+
+                # Save CSV
+                dr_dir = output_base_dir / "dual_resonance"
+                dr_dir.mkdir(parents=True, exist_ok=True)
+                dr_save_csv([dr_result], str(dr_dir / "dual_resonance.csv"))
+
+                # Save figure
+                fig_path = plot_resonance_separation(
+                    str(results["strip_directory"]),
+                    str(dr_dir / "dual_resonance.png"),
+                )
+
+                if dr_result.success:
+                    sep = "YES" if dr_result.separation_success else "NO"
+                    print(f"[OK] f0 = {dr_result.f0:.3f} Hz, "
+                          f"f1 = {dr_result.f1:.3f} Hz, "
+                          f"ratio = {dr_result.freq_ratio:.2f}, "
+                          f"separated: {sep}")
+                else:
+                    print(f"[!] {dr_result.error_message}")
+                if fig_path:
+                    print(f"[>] Figure saved: {fig_path}")
+            except Exception as e:
+                print(f"[!] Dual-resonance error: {e}")
+                results["dual_resonance_error"] = str(e)
+
+            dual_time = time.time() - start_time
+        else:
+            print(f"\n[5/5] Dual-Resonance Analysis - SKIPPED")
+
+        # =================================================================
         # WORKFLOW SUMMARY
         # =================================================================
-        total_time = strip_time + hv_time + post_time + report_time
+        total_time = strip_time + hv_time + post_time + report_time + dual_time
         
         print("\n" + "=" * 80)
         print("WORKFLOW COMPLETED SUCCESSFULLY!")
@@ -454,6 +538,8 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
         print(f"   - Post-processing: {post_time:.2f}s")
         if report_time > 0:
             print(f"   - Report generation: {report_time:.2f}s")
+        if dual_time > 0:
+            print(f"   - Dual-resonance: {dual_time:.2f}s")
         print(f"Processed {len(step_folders)} stripped models")
         print(f"All outputs saved in: {output_base_dir}")
         
@@ -471,6 +557,9 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
                 print(f"      - combined_figure.png")
             if 'summary_csv' in step_data:
                 print(f"      - summary.csv")
+            if 'vs30' in step_data:
+                ext = " (extrapolated)" if step_data.get("vs30_extrapolated") else ""
+                print(f"      - Vs30 = {step_data['vs30']:.1f} m/s{ext}")
         
         print("\nReady for analysis!")
         print("=" * 80)

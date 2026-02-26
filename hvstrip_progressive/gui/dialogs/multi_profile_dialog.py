@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...core.hv_forward import compute_hv_curve
-from ...core.soil_profile import SoilProfile
+from ...core.soil_profile import SoilProfile, compute_halfspace_display_depth
 
 
 @dataclass
@@ -231,15 +231,20 @@ class _ComputeWorker(QThread):
     finished = Signal(int, object, object)  # index, freqs, amps
     error = Signal(int, str)
 
-    def __init__(self, index: int, model_path: str, config: dict):
+    def __init__(self, index: int, model_path: str, config: dict,
+                 engine_name: str = "diffuse_field"):
         super().__init__()
         self._index = index
         self._model_path = model_path
         self._config = config
+        self._engine_name = engine_name
 
     def run(self):
         try:
-            freqs, amps = compute_hv_curve(self._model_path, self._config)
+            freqs, amps = compute_hv_curve(
+                self._model_path, self._config,
+                engine_name=self._engine_name,
+            )
             self.finished.emit(self._index, freqs, amps)
         except Exception as e:
             self.error.emit(self._index, str(e))
@@ -257,6 +262,7 @@ class MultiProfilePickerDialog(QDialog):
         freq_config: dict,
         fig_settings: FigureSettings,
         parent=None,
+        engine_name: str = "diffuse_field",
     ):
         super().__init__(parent)
         self.setWindowTitle("Multiple Profiles — HV Forward Modeling")
@@ -265,6 +271,7 @@ class MultiProfilePickerDialog(QDialog):
 
         self._freq_config = freq_config
         self._fig_settings = fig_settings
+        self._engine_name = engine_name
         self._results: List[ProfileResult] = [
             ProfileResult(name=name, profile=prof) for name, prof in profiles
         ]
@@ -616,7 +623,8 @@ class MultiProfilePickerDialog(QDialog):
         self._temp_paths[self._current_idx] = tmp.name
 
         worker = _ComputeWorker(
-            self._current_idx, tmp.name, self._freq_config
+            self._current_idx, tmp.name, self._freq_config,
+            engine_name=self._engine_name,
         )
         worker.finished.connect(self._on_compute_done)
         worker.error.connect(self._on_compute_error)
@@ -802,7 +810,10 @@ class MultiProfilePickerDialog(QDialog):
                 tmp.write(r.profile.to_hvf_format())
                 tmp.close()
                 try:
-                    freqs, amps = compute_hv_curve(tmp.name, self._freq_config)
+                    freqs, amps = compute_hv_curve(
+                        tmp.name, self._freq_config,
+                        engine_name=self._engine_name,
+                    )
                     r.freqs = np.asarray(freqs)
                     r.amps = np.asarray(amps)
                     r.computed = True
@@ -974,10 +985,11 @@ class MultiProfilePickerDialog(QDialog):
         """Draw compact Vs profile."""
         depths = [0.0]
         vs_vals = []
+        total_finite = sum(l.thickness for l in profile.layers if not l.is_halfspace)
         for layer in profile.layers:
             vs_vals.append(layer.vs)
             if layer.is_halfspace:
-                depths.append(depths[-1] + max(100, depths[-1] * 0.3))
+                depths.append(depths[-1] + compute_halfspace_display_depth(total_finite))
             else:
                 depths.append(depths[-1] + layer.thickness)
 

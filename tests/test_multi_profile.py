@@ -313,12 +313,16 @@ class TestMultiProfileDialog:
         assert median_result.f0 is not None, "Median f0 should be set"
         print(f"  Median f0: {median_result.f0[0]:.3f} Hz")
 
-        # Use the actual save method
-        page = ForwardModelingPage()
+        # Use the save method from MultiProfileTab
+        from hvstrip_progressive.gui.pages.multi_profile_tab import MultiProfileTab
+        tab = MultiProfileTab(
+            get_freq_config=lambda: {"fmin": 0.2, "fmax": 20.0, "nf": 500},
+            get_output_dir=lambda: str(OUTPUT_DIR),
+        )
         qapp.processEvents()
 
         outdir = str(OUTPUT_DIR)
-        page._save_multi_results(results, outdir, fig_settings, median_result)
+        tab._save_results(results, outdir, fig_settings, median_result)
 
         # Verify per-profile output
         for r in results:
@@ -349,7 +353,7 @@ class TestMultiProfileDialog:
 
         dialog._wait_for_workers()
         dialog.close()
-        page.close()
+        tab.close()
 
     def test_load_output_folder(self, qapp):
         """Load an existing output folder and verify profiles + median are parsed."""

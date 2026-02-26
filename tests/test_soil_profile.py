@@ -194,8 +194,8 @@ class TestSoilProfile:
     def test_from_hvf_string(self):
         """Test HVf format parsing."""
         hvf_content = """2
-5.00 200.0 400.0 1.800
-0.00 800.0 1600.0 2.200"""
+5.00 400.0 200.0 1.800
+0.00 1600.0 800.0 2.200"""
         
         profile = SoilProfile.from_hvf_string(hvf_content, name="Test")
         
@@ -203,6 +203,7 @@ class TestSoilProfile:
         assert len(profile.layers) == 2
         assert profile.layers[0].thickness == 5.0
         assert profile.layers[0].vs == 200.0
+        assert profile.layers[0].vp == 400.0
         assert profile.layers[1].is_halfspace
 
     def test_save_and_load_hvf(self):
@@ -250,6 +251,48 @@ class TestSoilProfile:
         
         copy.layers[0].vs = 300.0
         assert profile.layers[0].vs == 200.0
+
+
+class TestFromAuto:
+    """Tests for SoilProfile.from_auto format detection."""
+
+    def test_auto_hvf_txt(self, tmp_path):
+        """from_auto loads HVf-format .txt files."""
+        hvf = "2\n5.0  400.0  200.0  1800.0\n0.0  1600.0  800.0  2200.0\n"
+        f = tmp_path / "model.txt"
+        f.write_text(hvf)
+        p = SoilProfile.from_auto(str(f))
+        assert len(p.layers) == 2
+        assert p.layers[0].vs == 200.0
+
+    def test_auto_csv(self, tmp_path):
+        """from_auto loads CSV files."""
+        csv_text = (
+            "thickness,vs,vp,density\n"
+            "5.0,200.0,400.0,1800.0\n"
+            "0.0,800.0,1600.0,2200.0\n"
+        )
+        f = tmp_path / "profile.csv"
+        f.write_text(csv_text)
+        p = SoilProfile.from_auto(str(f))
+        assert len(p.layers) == 2
+        assert p.layers[1].vs == 800.0
+
+    def test_auto_name_override(self, tmp_path):
+        """from_auto respects explicit name parameter."""
+        hvf = "2\n5.0  400.0  200.0  1800.0\n0.0  1600.0  800.0  2200.0\n"
+        f = tmp_path / "model.txt"
+        f.write_text(hvf)
+        p = SoilProfile.from_auto(str(f), name="custom_name")
+        assert p.name == "custom_name"
+
+    def test_auto_defaults_name_to_stem(self, tmp_path):
+        """from_auto uses file stem as name when not provided."""
+        hvf = "2\n5.0  400.0  200.0  1800.0\n0.0  1600.0  800.0  2200.0\n"
+        f = tmp_path / "my_profile.txt"
+        f.write_text(hvf)
+        p = SoilProfile.from_auto(str(f))
+        assert p.name == "my_profile"
 
 
 if __name__ == "__main__":

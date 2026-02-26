@@ -16,6 +16,7 @@ from qfluentwidgets import (
 
 # Import from parent package
 from ...utils.config import load_config, save_config
+from ..dialogs.engine_settings_dialog import EngineSettingsDialog
 
 
 class SettingsPage(QWidget):
@@ -59,6 +60,10 @@ class SettingsPage(QWidget):
         descLabel.setWordWrap(True)
         layout.addWidget(descLabel)
 
+        # Engine Selection Card
+        engineCard = self.createEngineCard()
+        layout.addWidget(engineCard)
+
         # HVf Configuration Card
         hvfCard = self.createHvfCard()
         layout.addWidget(hvfCard)
@@ -74,6 +79,10 @@ class SettingsPage(QWidget):
         # Peak Detection Card
         peakCard = self.createPeakDetectionCard()
         layout.addWidget(peakCard)
+
+        # Dual-Resonance Card
+        dualCard = self.createDualResonanceCard()
+        layout.addWidget(dualCard)
 
         # Configuration File Card
         configCard = self.createConfigFileCard()
@@ -97,6 +106,54 @@ class SettingsPage(QWidget):
         scrollArea.setWidget(contentWidget)
         mainLayout.addWidget(scrollArea)
         layout.addStretch()
+
+    def createEngineCard(self):
+        """Create forward-modeling engine selection card."""
+        card = CardWidget(self)
+        cardLayout = QVBoxLayout(card)
+        cardLayout.setContentsMargins(20, 20, 20, 20)
+        cardLayout.setSpacing(15)
+
+        cardTitle = SubtitleLabel("Forward-Modeling Engine", card)
+        cardLayout.addWidget(cardTitle)
+
+        row = QHBoxLayout()
+        row.addWidget(BodyLabel("Engine:", card))
+        self.engineCombo = ComboBox(card)
+        self.engineCombo.addItems(["diffuse_field", "sh_wave", "ellipticity"])
+        self.engineCombo.setCurrentText(
+            self.config.get('engine', {}).get('name', 'diffuse_field')
+        )
+        row.addWidget(self.engineCombo)
+
+        self._engine_settings_config = self.config.get('engine_settings', {})
+        engineSettingsBtn = PushButton(FIF.SETTING, "Configure Engines...", card)
+        engineSettingsBtn.clicked.connect(self._openEngineSettings)
+        row.addWidget(engineSettingsBtn)
+
+        row.addStretch()
+        cardLayout.addLayout(row)
+
+        self.engineDescLabel = BodyLabel(
+            "diffuse_field: HVf.exe diffuse-field solver (default)\n"
+            "ellipticity: Rayleigh wave ellipticity via gpell (Geopsy)\n"
+            "sh_wave: SH wave propagator-matrix (Kramer 1996, pure Python)",
+            card,
+        )
+        self.engineDescLabel.setWordWrap(True)
+        cardLayout.addWidget(self.engineDescLabel)
+
+        return card
+
+    def _openEngineSettings(self):
+        """Open the engine settings dialog."""
+        dlg = EngineSettingsDialog(
+            self,
+            config=self._engine_settings_config,
+            active_engine=self.engineCombo.currentText(),
+        )
+        if dlg.exec():
+            self._engine_settings_config = dlg.get_config()
 
     def createHvfCard(self):
         """Create HVf configuration card."""
@@ -293,6 +350,54 @@ class SettingsPage(QWidget):
 
         return card
 
+    def createDualResonanceCard(self):
+        """Create dual-resonance analysis settings card."""
+        card = CardWidget(self)
+        cardLayout = QVBoxLayout(card)
+        cardLayout.setContentsMargins(20, 20, 20, 20)
+        cardLayout.setSpacing(15)
+
+        cardTitle = SubtitleLabel("Dual-Resonance Analysis", card)
+        cardLayout.addWidget(cardTitle)
+
+        desc = BodyLabel(
+            "Extract deep (f0) and shallow (f1) resonance frequencies "
+            "from progressive stripping results.",
+            card,
+        )
+        desc.setWordWrap(True)
+        cardLayout.addWidget(desc)
+
+        row1 = QHBoxLayout()
+        row1.addWidget(BodyLabel("Separation Ratio Threshold (f1/f0):", card))
+        self.dualRatioSpin = DoubleSpinBox(card)
+        self.dualRatioSpin.setRange(1.0, 5.0)
+        self.dualRatioSpin.setDecimals(2)
+        self.dualRatioSpin.setValue(
+            self.config.get('dual_resonance', {}).get(
+                'separation_ratio_threshold', 1.2
+            )
+        )
+        row1.addWidget(self.dualRatioSpin)
+        row1.addStretch()
+        cardLayout.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        row2.addWidget(BodyLabel("Minimum Freq Shift (Hz):", card))
+        self.dualShiftSpin = DoubleSpinBox(card)
+        self.dualShiftSpin.setRange(0.01, 5.0)
+        self.dualShiftSpin.setDecimals(2)
+        self.dualShiftSpin.setValue(
+            self.config.get('dual_resonance', {}).get(
+                'separation_shift_threshold', 0.3
+            )
+        )
+        row2.addWidget(self.dualShiftSpin)
+        row2.addStretch()
+        cardLayout.addLayout(row2)
+
+        return card
+
     def _onPresetChanged(self, preset: str):
         """Handle preset selection change."""
         is_custom = preset == "custom"
@@ -451,6 +556,9 @@ class SettingsPage(QWidget):
     def getDefaultConfig(self):
         """Get default configuration."""
         return {
+            'engine': {
+                'name': 'diffuse_field',
+            },
             'hv_forward': {
                 'exe_path': '',
                 'fmin': 0.2,
@@ -466,7 +574,11 @@ class SettingsPage(QWidget):
                 'preset': 'default',
                 'method': 'find_peaks',
                 'select': 'leftmost'
-            }
+            },
+            'dual_resonance': {
+                'separation_ratio_threshold': 1.2,
+                'separation_shift_threshold': 0.3,
+            },
         }
 
     def updateUIFromConfig(self):
@@ -491,6 +603,16 @@ class SettingsPage(QWidget):
         self.peakSelectCombo.setCurrentText(peak_cfg.get('select', 'leftmost'))
         self._onPresetChanged(self.peakPresetCombo.currentText())
 
+        # Engine
+        self.engineCombo.setCurrentText(
+            self.config.get('engine', {}).get('name', 'diffuse_field')
+        )
+
+        # Dual-resonance
+        dr = self.config.get('dual_resonance', {})
+        self.dualRatioSpin.setValue(dr.get('separation_ratio_threshold', 1.2))
+        self.dualShiftSpin.setValue(dr.get('separation_shift_threshold', 0.3))
+
     def updateConfigFromUI(self):
         """Update configuration from UI widgets."""
         self.config['hv_forward'] = {
@@ -511,6 +633,17 @@ class SettingsPage(QWidget):
             'preset': preset,
             'method': self.peakMethodCombo.currentText(),
             'select': self.peakSelectCombo.currentText()
+        }
+
+        self.config['engine'] = {
+            'name': self.engineCombo.currentText(),
+        }
+
+        self.config['engine_settings'] = self._engine_settings_config
+
+        self.config['dual_resonance'] = {
+            'separation_ratio_threshold': self.dualRatioSpin.value(),
+            'separation_shift_threshold': self.dualShiftSpin.value(),
         }
 
     def getConfig(self):

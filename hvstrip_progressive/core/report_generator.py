@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.patches import Rectangle
 import pandas as pd
+from .soil_profile import compute_halfspace_display_depth
 
 
 # Set publication-ready matplotlib defaults
@@ -754,6 +755,294 @@ class ProgressiveStrippingReporter:
         
         return fig_path
     
+    # ------------------------------------------------------------------ 
+    # draw-on-figure variants (for interactive wizard)
+    # ------------------------------------------------------------------
+
+    def draw_hv_overlay_on_figure(self, fig, **kw) -> bool:
+        """Draw HV overlay into an existing *fig*."""
+        fig.clear()
+        ax = fig.add_subplot(111)
+        n_steps = len(self.step_data)
+        if n_steps == 0:
+            return False
+        cmap_name = kw.get("cmap", "cividis")
+        try:
+            colors = plt.colormaps[cmap_name](np.linspace(0, 1, n_steps))
+        except Exception:
+            colors = plt.cm.cividis(np.linspace(0, 1, n_steps))
+        lw = kw.get("linewidth", 2)
+        alpha = kw.get("alpha", 0.8)
+        log_x = kw.get("log_x", True)
+        grid = kw.get("grid", True)
+        font = kw.get("font_size", 12)
+
+        show_peaks = kw.get("show_peaks", True)
+        marker_size = kw.get("marker_size", 8)
+        for i, sd in enumerate(self.step_data):
+            hv = sd['hv_data']
+            freqs, amps = hv.get('frequencies', []), hv.get('amplitudes', [])
+            if len(freqs) == 0:
+                continue
+            label = f"Step {sd['step']} ({sd['n_finite_layers']}L)"
+            ax.plot(freqs, amps, color=colors[i], linewidth=lw,
+                    alpha=alpha, label=label)
+            if show_peaks:
+                pf = hv.get('peak_frequency', 0)
+                pa = hv.get('peak_amplitude', 0)
+                if pf:
+                    ax.scatter(pf, pa, color=colors[i], s=marker_size * 10,
+                               edgecolors='white', linewidth=1, zorder=5)
+
+        if log_x:
+            ax.set_xscale('log')
+        if grid:
+            ax.grid(True, alpha=0.3, which='both')
+        ax.set_xlabel('Frequency (Hz)', fontsize=font, weight='bold')
+        ax.set_ylabel('H/V Amplitude Ratio', fontsize=font, weight='bold')
+        ax.set_title('Progressive Layer Stripping: HV Curves Evolution',
+                      fontsize=font + 2, weight='bold')
+        ax.legend(fontsize=max(font - 2, 6), loc='upper right')
+        xlim_min = kw.get("xlim_min")
+        xlim_max = kw.get("xlim_max")
+        if xlim_min is not None:
+            ax.set_xlim(left=xlim_min)
+        if xlim_max is not None:
+            ax.set_xlim(right=xlim_max)
+        try:
+            fig.tight_layout()
+        except Exception:
+            pass
+        return True
+
+    def draw_peak_evolution_on_figure(self, fig, **kw) -> bool:
+        """Draw 3-panel peak evolution into *fig*."""
+        fig.clear()
+        if not self.analysis.get('step_numbers'):
+            return False
+        steps = self.analysis['step_numbers']
+        peak_freqs = self.analysis['peak_frequencies']
+        peak_amps = self.analysis['peak_amplitudes']
+        freq_shifts = self.analysis['frequency_shifts']
+        font = kw.get("font_size", 11)
+        grid = kw.get("grid", True)
+        show_fill = kw.get("show_fill", True)
+        ms = kw.get("marker_size", 8)
+        lw = kw.get("linewidth", 2)
+
+        ax1 = fig.add_subplot(3, 1, 1)
+        ax1.plot(steps, peak_freqs, 'o-', lw=lw, ms=ms, color='navy')
+        if show_fill:
+            ax1.fill_between(steps, peak_freqs, alpha=0.2, color='navy')
+        ax1.set_ylabel('Peak Freq (Hz)', fontsize=font, weight='bold')
+        ax1.set_title('Peak Evolution', fontsize=font + 1, weight='bold')
+        if grid:
+            ax1.grid(True, alpha=0.3)
+
+        ax2 = fig.add_subplot(3, 1, 2)
+        ax2.plot(steps, peak_amps, 'o-', lw=lw, ms=ms, color='darkred')
+        if show_fill:
+            ax2.fill_between(steps, peak_amps, alpha=0.2, color='darkred')
+        ax2.set_ylabel('Peak Amplitude', fontsize=font, weight='bold')
+        if grid:
+            ax2.grid(True, alpha=0.3)
+
+        ax3 = fig.add_subplot(3, 1, 3)
+        colors_bar = ['green' if x >= 0 else 'red' for x in freq_shifts]
+        ax3.bar(steps, freq_shifts, color=colors_bar, alpha=0.7, edgecolor='black')
+        ax3.axhline(y=0, color='black', lw=1)
+        ax3.set_xlabel('Stripping Step', fontsize=font, weight='bold')
+        ax3.set_ylabel('Freq Shift (%)', fontsize=font, weight='bold')
+        if grid:
+            ax3.grid(True, alpha=0.3, axis='y')
+
+        try:
+            fig.tight_layout()
+        except Exception:
+            pass
+        return True
+
+    def draw_interface_analysis_on_figure(self, fig, **kw) -> bool:
+        """Draw interface impedance / Vs contrast into *fig*."""
+        fig.clear()
+        contrasts = self.analysis.get('interface_contrasts', [])
+        font = kw.get("font_size", 11)
+        grid = kw.get("grid", True)
+        ms = kw.get("marker_size", 8)
+        lw = kw.get("linewidth", 2)
+        af = kw.get("annot_font", font)
+
+        ax1 = fig.add_subplot(1, 2, 1)
+        ax2 = fig.add_subplot(1, 2, 2)
+
+        if not contrasts:
+            for ax in (ax1, ax2):
+                ax.text(0.5, 0.5, 'No interface data', ha='center',
+                        va='center', transform=ax.transAxes)
+        else:
+            cs = sorted(contrasts, key=lambda x: x['step'])
+            depths = [c['depth'] for c in cs]
+            imps = [c['impedance_contrast'] for c in cs]
+            vsc = [c['vs_contrast'] for c in cs]
+
+            ax1.plot(imps, depths, '-o', color='#2E86AB', lw=lw, ms=ms)
+            ax1.invert_yaxis()
+            ax1.set_xlabel('Impedance Contrast', fontsize=font, weight='bold')
+            ax1.set_ylabel('Depth (m)', fontsize=font, weight='bold')
+            ax1.set_title('Impedance vs Depth', fontsize=font + 1, weight='bold')
+            for d, imp in zip(depths, imps):
+                ax1.annotate(f"{imp:.2f}", (imp, d), fontsize=af,
+                             xytext=(5, 0), textcoords='offset points')
+
+            ax2.plot(vsc, depths, '-o', color='#8E44AD', lw=lw, ms=ms)
+            ax2.invert_yaxis()
+            ax2.set_xlabel('Vs Contrast', fontsize=font, weight='bold')
+            ax2.set_ylabel('Depth (m)', fontsize=font, weight='bold')
+            ax2.set_title('Vs Contrast vs Depth', fontsize=font + 1, weight='bold')
+            for d, v in zip(depths, vsc):
+                ax2.annotate(f"{v:.2f}", (v, d), fontsize=af,
+                             xytext=(5, 0), textcoords='offset points')
+
+        for ax in (ax1, ax2):
+            if grid:
+                ax.grid(True, alpha=0.3)
+        try:
+            fig.tight_layout()
+        except Exception:
+            pass
+        return True
+
+    def draw_waterfall_on_figure(self, fig, **kw) -> bool:
+        """Draw waterfall plot into *fig*."""
+        fig.clear()
+        ax = fig.add_subplot(111)
+        n_steps = len(self.step_data)
+        if n_steps == 0:
+            return False
+        cmap_name = kw.get("cmap", "cividis")
+        try:
+            colors = plt.colormaps[cmap_name](np.linspace(0, 1, n_steps))
+        except Exception:
+            colors = plt.cm.cividis(np.linspace(0, 1, n_steps))
+        offset_factor = kw.get("offset_factor", 1.5)
+        lw = kw.get("linewidth", 2)
+        log_x = kw.get("log_x", True)
+        grid = kw.get("grid", True)
+        font = kw.get("font_size", 12)
+
+        normalize = kw.get("normalize", False)
+        alpha = kw.get("alpha", 0.8)
+        max_offset = 0
+        for i, sd in enumerate(self.step_data):
+            hv = sd['hv_data']
+            freqs, amps = hv.get('frequencies', []), hv.get('amplitudes', [])
+            if len(freqs) == 0:
+                continue
+            max_amp = np.max(amps)
+            if normalize or True:
+                plot_amps = np.array(amps) / max_amp
+            else:
+                plot_amps = np.array(amps)
+            offset = i * offset_factor
+            ax.plot(freqs, plot_amps + offset, color=colors[i], lw=lw, alpha=alpha,
+                    label=f"Step {sd['step']} (max: {max_amp:.1f})")
+            peak_idx = np.argmax(amps)
+            ax.scatter(freqs[peak_idx], plot_amps[peak_idx] + offset,
+                       color=colors[i], s=80, edgecolors='white', lw=2, zorder=5)
+            max_offset = offset + 1
+
+        if log_x:
+            ax.set_xscale('log')
+        if grid:
+            ax.grid(True, alpha=0.3, which='both')
+        ax.set_xlabel('Frequency (Hz)', fontsize=font, weight='bold')
+        ax.set_ylabel('Normalized H/V (offset)', fontsize=font, weight='bold')
+        ax.set_title('Waterfall View', fontsize=font + 2, weight='bold')
+        ax.legend(fontsize=max(font - 3, 6), loc='upper right')
+        ax.set_ylim(-0.5, max_offset + 0.5)
+        try:
+            fig.tight_layout()
+        except Exception:
+            pass
+        return True
+
+    def draw_publication_on_figure(self, fig, **kw) -> bool:
+        """Draw 2x2 publication figure into *fig*."""
+        fig.clear()
+        if not self.step_data:
+            return False
+        font = kw.get("font_size", 10)
+        grid = kw.get("grid", True)
+
+        ax1 = fig.add_subplot(2, 2, 1)
+        ax2 = fig.add_subplot(2, 2, 2)
+        ax3 = fig.add_subplot(2, 2, 3)
+        ax4 = fig.add_subplot(2, 2, 4)
+
+        # (a) HV curves — first, mid, last
+        indices = [0, len(self.step_data) // 2, len(self.step_data) - 1]
+        clrs = ['blue', 'green', 'red']
+        for ci, si in enumerate(indices):
+            if si < len(self.step_data):
+                sd = self.step_data[si]
+                hv = sd['hv_data']
+                f, a = hv.get('frequencies', []), hv.get('amplitudes', [])
+                if len(f):
+                    ax1.semilogx(f, a, color=clrs[ci], lw=2,
+                                 label=f"Step {sd['step']}")
+        ax1.set_xlabel('Frequency (Hz)', fontsize=font)
+        ax1.set_ylabel('H/V Amplitude', fontsize=font)
+        ax1.set_title('(a) HVSR Evolution', fontweight='bold', fontsize=font)
+        if grid:
+            ax1.grid(True, alpha=0.3)
+        ax1.legend(fontsize=max(font - 2, 6))
+
+        # (b) Peak frequency
+        ax2.plot(self.analysis['step_numbers'],
+                 self.analysis['peak_frequencies'],
+                 'o-', color='navy', lw=2, ms=6)
+        ax2.set_xlabel('Step', fontsize=font)
+        ax2.set_ylabel('Peak Freq (Hz)', fontsize=font)
+        ax2.set_title('(b) Peak Evolution', fontweight='bold', fontsize=font)
+        if grid:
+            ax2.grid(True, alpha=0.3)
+
+        # (c) Impedance
+        contrasts = self.analysis.get('interface_contrasts', [])
+        if contrasts:
+            depths = [c['depth'] for c in contrasts]
+            imps = [c['impedance_contrast'] for c in contrasts]
+            ax3.plot(imps, depths, 'o-', color='darkred', lw=2, ms=6)
+            ax3.invert_yaxis()
+        ax3.set_xlabel('Impedance Contrast', fontsize=font)
+        ax3.set_ylabel('Depth (m)', fontsize=font)
+        ax3.set_title('(c) Interface Profile', fontweight='bold', fontsize=font)
+        if grid:
+            ax3.grid(True, alpha=0.3)
+
+        # (d) Summary table
+        ax4.axis('off')
+        table_data = [
+            ['Initial f0', f"{self.analysis.get('initial_frequency', 0):.3f} Hz"],
+            ['Final f0', f"{self.analysis.get('final_frequency', 0):.3f} Hz"],
+            ['Total shift', f"{self.analysis.get('total_frequency_shift_pct', 0):.1f}%"],
+            ['Steps', f"{self.analysis.get('n_steps', 0)}"],
+        ]
+        tbl = ax4.table(cellText=table_data, colLabels=['Param', 'Value'],
+                        cellLoc='left', loc='center', colWidths=[0.55, 0.45])
+        tbl.auto_set_font_size(False)
+        tbl.set_fontsize(kw.get("table_font", font))
+        tbl.scale(1, 1.8)
+        ax4.set_title('(d) Key Results', fontweight='bold', fontsize=font)
+
+        fig.suptitle('Progressive Layer Stripping Analysis',
+                     fontsize=font + 2, fontweight='bold', y=0.99)
+        try:
+            fig.tight_layout(rect=[0, 0, 1, 0.96])
+        except Exception:
+            pass
+        return True
+
     def _create_text_report(self) -> Path:
         """Create comprehensive text report."""
         report_path = self.output_dir / 'analysis_report.txt'
@@ -952,11 +1241,12 @@ class ProgressiveStrippingReporter:
         if thicknesses and vs_values:
             # Calculate depths
             depths = [0]
+            total_finite = sum(h for h in thicknesses if h > 0)
             for h in thicknesses:
                 if h > 0:
                     depths.append(depths[-1] + h)
                 else:
-                    depths.append(depths[-1] + max(100, depths[-1] * 0.3))
+                    depths.append(depths[-1] + compute_halfspace_display_depth(total_finite))
             
             # Create step profile
             plot_depths = []

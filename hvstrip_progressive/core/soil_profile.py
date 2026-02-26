@@ -349,8 +349,8 @@ class SoilProfile:
             parts = lines[i].split()
             if len(parts) >= 4:
                 thickness = float(parts[0])
-                vs = float(parts[1])
-                vp = float(parts[2])
+                vp = float(parts[1])
+                vs = float(parts[2])
                 density = float(parts[3]) * 1000.0  # Convert from g/cm3 to kg/m3
                 
                 is_halfspace = thickness == 0
@@ -790,6 +790,64 @@ class SoilProfile:
 
         return profile
 
+    @classmethod
+    def from_auto(cls, file_path: str, name: Optional[str] = None) -> "SoilProfile":
+        """Auto-detect file format and load profile.
+
+        Supported formats (by extension):
+        - ``.xlsx`` → Excel
+        - ``.csv``  → CSV (header row with thickness/vs/vp/density columns)
+        - ``.txt``  → tries HVf first, falls back to simple TXT
+        - Dinver prefix detection when ``_vs.txt`` / ``_Vs.txt`` is found
+
+        Parameters
+        ----------
+        file_path : str
+            Path to the profile file.
+        name : str, optional
+            Profile name override.  Defaults to the file stem.
+
+        Returns
+        -------
+        SoilProfile
+        """
+        path = Path(file_path)
+        if name is None:
+            name = path.stem
+        ext = path.suffix.lower()
+
+        if ext == ".xlsx":
+            return cls.from_excel_file(str(path), name=name)
+
+        if ext == ".csv":
+            return cls.from_csv_file(str(path))
+
+        # Check for Dinver convention: name ends with _vs / _Vs / _VS
+        stem_lower = path.stem.lower()
+        if stem_lower.endswith("_vs"):
+            prefix = str(path)[: -len("_vs.txt")]
+            try:
+                return cls.from_dinver_prefix(prefix, name=name)
+            except Exception:
+                pass  # fall through to HVf / simple TXT
+
+        # .txt or unknown → try HVf, then simple TXT
+        if ext in (".txt", ""):
+            try:
+                profile = cls.from_hvf_file(str(path))
+                profile.name = name
+                return profile
+            except Exception:
+                pass
+            profile = cls.from_txt_file(str(path))
+            profile.name = name
+            return profile
+
+        # Last resort
+        profile = cls.from_txt_file(str(path))
+        profile.name = name
+        return profile
+
     def save_hvf(self, file_path: str) -> None:
         """Save profile to HVf format file."""
         path = Path(file_path)
@@ -814,3 +872,40 @@ class SoilProfile:
             )
             new_profile.add_layer(new_layer)
         return new_profile
+
+
+# ---------------------------------------------------------------------------
+# Half-space display depth
+# ---------------------------------------------------------------------------
+
+def compute_halfspace_display_depth(
+    total_finite_depth: float,
+    *,
+    hs_ratio: float = 0.25,
+    min_extension: float = 5.0,
+    max_extension: float | None = None,
+) -> float:
+    """Compute a proportional display thickness for the half-space layer.
+
+    Parameters
+    ----------
+    total_finite_depth : float
+        Sum of all finite-layer thicknesses (metres).
+    hs_ratio : float
+        Fraction of *total_finite_depth* to use (default 0.25 = 25 %).
+    min_extension : float
+        Minimum extension in metres (avoids a paper-thin half-space).
+    max_extension : float or None
+        Hard upper cap in metres.  ``None`` → ``total_finite_depth * 0.5``.
+
+    Returns
+    -------
+    float
+        Display thickness (metres) for the half-space layer.
+    """
+    if total_finite_depth <= 0:
+        return max(min_extension, 20.0)
+
+    cap = max_extension if max_extension is not None else total_finite_depth * 0.5
+    extension = total_finite_depth * hs_ratio
+    return float(max(min_extension, min(extension, cap)))

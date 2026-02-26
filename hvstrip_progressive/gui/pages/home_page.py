@@ -8,7 +8,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel,
     QPushButton, QFileDialog, QLineEdit, QTextEdit, QSplitter,
-    QTabWidget, QSpinBox, QDoubleSpinBox, QCheckBox, QProgressBar,
+    QTabWidget, QSpinBox, QDoubleSpinBox, QCheckBox, QComboBox, QProgressBar,
     QListWidget, QListWidgetItem, QMessageBox, QRadioButton, QButtonGroup
 )
 from PySide6.QtCore import Qt, Signal, QThread
@@ -18,6 +18,10 @@ import numpy as np
 from ...core.batch_workflow import run_complete_workflow
 from ...core.soil_profile import SoilProfile
 from ..dialogs.interactive_peak_picker import InteractivePeakPickerDialog
+from ..dialogs.dual_resonance_settings_dialog import DualResonanceSettingsDialog
+from ..dialogs.batch_settings_dialog import BatchSettingsDialog
+from ..dialogs.figure_wizard_dialog import FigureWizardDialog
+from ..dialogs.engine_settings_dialog import EngineSettingsDialog
 
 
 class WorkflowWorker(QThread):
@@ -231,6 +235,18 @@ class HomePage(QWidget):
         self.nf_spin.setValue(500)
         config_layout.addWidget(self.nf_spin)
 
+        config_layout.addWidget(QLabel("Engine:"))
+        self.engine_combo = QComboBox()
+        self.engine_combo.addItems(["diffuse_field", "sh_wave", "ellipticity"])
+        config_layout.addWidget(self.engine_combo)
+
+        self._engine_settings_config = {}
+        btn_engine_settings = QPushButton("\u2699")
+        btn_engine_settings.setMaximumWidth(30)
+        btn_engine_settings.setToolTip("Engine settings")
+        btn_engine_settings.clicked.connect(self._open_engine_settings)
+        config_layout.addWidget(btn_engine_settings)
+
         config_layout.addStretch()
         layout.addWidget(config_group)
 
@@ -251,7 +267,23 @@ class HomePage(QWidget):
             "Manually select peaks by clicking on each HVSR curve after processing"
         )
         options_layout.addWidget(self.chk_interactive_peaks)
-        
+
+        dr_row = QHBoxLayout()
+        self.chk_dual_resonance = QCheckBox("Run dual-resonance analysis")
+        self.chk_dual_resonance.setChecked(False)
+        self.chk_dual_resonance.setToolTip(
+            "Extract deep (f0) and shallow (f1) resonance frequencies "
+            "and generate separation figure"
+        )
+        dr_row.addWidget(self.chk_dual_resonance)
+        self.btn_dr_settings = QPushButton("\u2699")
+        self.btn_dr_settings.setMaximumWidth(30)
+        self.btn_dr_settings.setToolTip("Dual-resonance settings")
+        self.btn_dr_settings.clicked.connect(self._open_dr_settings)
+        dr_row.addWidget(self.btn_dr_settings)
+        dr_row.addStretch()
+        options_layout.addLayout(dr_row)
+
         layout.addWidget(options_group)
 
         btn_layout = QHBoxLayout()
@@ -336,6 +368,17 @@ class HomePage(QWidget):
         self.batch_nf.setValue(500)
         config_layout.addWidget(self.batch_nf)
 
+        config_layout.addWidget(QLabel("Engine:"))
+        self.batch_engine_combo = QComboBox()
+        self.batch_engine_combo.addItems(["diffuse_field", "sh_wave", "ellipticity"])
+        config_layout.addWidget(self.batch_engine_combo)
+
+        btn_batch_engine_settings = QPushButton("\u2699")
+        btn_batch_engine_settings.setMaximumWidth(30)
+        btn_batch_engine_settings.setToolTip("Engine settings")
+        btn_batch_engine_settings.clicked.connect(self._open_batch_engine_settings)
+        config_layout.addWidget(btn_batch_engine_settings)
+
         config_layout.addStretch()
         layout.addWidget(config_group)
 
@@ -349,7 +392,22 @@ class HomePage(QWidget):
             "Generate analysis report with overlay plots, peak evolution, and summary"
         )
         batch_options_layout.addWidget(self.batch_chk_generate_report)
-        
+
+        batch_dr_row = QHBoxLayout()
+        self.batch_chk_dual_resonance = QCheckBox("Run dual-resonance analysis")
+        self.batch_chk_dual_resonance.setChecked(False)
+        self.batch_chk_dual_resonance.setToolTip(
+            "Extract f0/f1 resonance frequencies for each profile"
+        )
+        batch_dr_row.addWidget(self.batch_chk_dual_resonance)
+        self.batch_btn_dr_settings = QPushButton("\u2699")
+        self.batch_btn_dr_settings.setMaximumWidth(30)
+        self.batch_btn_dr_settings.setToolTip("Dual-resonance settings")
+        self.batch_btn_dr_settings.clicked.connect(self._open_dr_settings)
+        batch_dr_row.addWidget(self.batch_btn_dr_settings)
+        batch_dr_row.addStretch()
+        batch_options_layout.addLayout(batch_dr_row)
+
         layout.addWidget(batch_options_group)
 
         btn_layout = QHBoxLayout()
@@ -366,6 +424,31 @@ class HomePage(QWidget):
         layout.addStretch()
 
         return widget
+
+    # ------------------------------------------------------------------
+    # Dual-resonance helpers
+    # ------------------------------------------------------------------
+
+    _dr_ratio = 1.2
+    _dr_shift = 0.3
+
+    def _open_dr_settings(self):
+        """Open dual-resonance threshold settings popup."""
+        dlg = DualResonanceSettingsDialog(
+            self, ratio=self._dr_ratio, shift=self._dr_shift,
+        )
+        if dlg.exec():
+            vals = dlg.get_values()
+            self._dr_ratio = vals["separation_ratio_threshold"]
+            self._dr_shift = vals["separation_shift_threshold"]
+
+    def _get_dr_config(self, enabled: bool) -> dict:
+        """Build dual_resonance config dict."""
+        return {
+            "enable": enabled,
+            "separation_ratio_threshold": self._dr_ratio,
+            "separation_shift_threshold": self._dr_shift,
+        }
 
     def _on_source_changed(self):
         """Handle source type change."""
@@ -432,6 +515,26 @@ class HomePage(QWidget):
     def _clear_batch_files(self):
         self.batch_list.clear()
 
+    def _open_engine_settings(self):
+        """Open engine settings dialog (single-run section)."""
+        dlg = EngineSettingsDialog(
+            self,
+            config=self._engine_settings_config,
+            active_engine=self.engine_combo.currentText(),
+        )
+        if dlg.exec():
+            self._engine_settings_config = dlg.get_config()
+
+    def _open_batch_engine_settings(self):
+        """Open engine settings dialog (batch section)."""
+        dlg = EngineSettingsDialog(
+            self,
+            config=self._engine_settings_config,
+            active_engine=self.batch_engine_combo.currentText(),
+        )
+        if dlg.exec():
+            self._engine_settings_config = dlg.get_config()
+
     def _run_single(self):
         output_dir = self.output_edit.text().strip()
         if not output_dir:
@@ -477,8 +580,12 @@ class HomePage(QWidget):
                 "fmax": self.fmax_spin.value(),
                 "nf": self.nf_spin.value(),
             },
+            "engine_name": self.engine_combo.currentText(),
             "generate_report": self._generate_report,
-            "interactive_mode": self._interactive_peaks,  # Skip post-processing if interactive
+            "interactive_mode": self._interactive_peaks,
+            "dual_resonance": self._get_dr_config(
+                self.chk_dual_resonance.isChecked()
+            ),
         }
 
         self.output_text.clear()
@@ -504,18 +611,38 @@ class HomePage(QWidget):
             QMessageBox.warning(self, "Error", "Please select an output directory.")
             return
 
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-        profiles = [self.batch_list.item(i).text() for i in range(self.batch_list.count())]
-
-        config = {
-            "hv_forward": {
-                "fmin": self.batch_fmin.value(),
-                "fmax": self.batch_fmax.value(),
-                "nf": self.batch_nf.value(),
-            },
-            "generate_report": self.batch_chk_generate_report.isChecked()
+        # Collect current UI values as defaults for the settings dialog
+        defaults = {
+            "fmin": self.batch_fmin.value(),
+            "fmax": self.batch_fmax.value(),
+            "nf": self.batch_nf.value(),
+            "engine": self.batch_engine_combo.currentText(),
+            "generate_report": self.batch_chk_generate_report.isChecked(),
+            "dual_resonance": self._get_dr_config(
+                self.batch_chk_dual_resonance.isChecked()
+            ),
         }
+
+        dlg = BatchSettingsDialog(self, defaults=defaults)
+        if not dlg.exec():
+            return
+
+        config = dlg.get_config()
+
+        # Sync main-tab controls back from dialog choices
+        self.batch_fmin.setValue(config["hv_forward"]["fmin"])
+        self.batch_fmax.setValue(config["hv_forward"]["fmax"])
+        self.batch_nf.setValue(config["hv_forward"]["nf"])
+        self.batch_engine_combo.setCurrentText(config["engine_name"])
+        self.batch_chk_generate_report.setChecked(config["generate_report"])
+        self.batch_chk_dual_resonance.setChecked(
+            config["dual_resonance"]["enable"]
+        )
+        self._dr_ratio = config["dual_resonance"]["separation_ratio_threshold"]
+        self._dr_shift = config["dual_resonance"]["separation_shift_threshold"]
+
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        profiles = [self.batch_list.item(i).text() for i in range(self.batch_list.count())]
 
         self.output_text.clear()
         self.output_text.append(f"Starting batch processing of {len(profiles)} profiles...")
@@ -559,6 +686,26 @@ class HomePage(QWidget):
         else:
             self._reset_ui()
 
+        # Offer Figure Wizard for reviewing / exporting figures
+        strip_dir = results.get('strip_directory', '')
+        output_dir = results.get('output_directory', self._current_output_dir)
+        if strip_dir and Path(strip_dir).exists():
+            has_dr = results.get('dual_resonance') is not None
+            reply = QMessageBox.question(
+                self, "Review Figures",
+                "Open the Figure Wizard to review and export figures?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if reply == QMessageBox.Yes:
+                wizard = FigureWizardDialog(
+                    strip_dir=str(strip_dir),
+                    output_dir=str(output_dir),
+                    has_dual_resonance=has_dr,
+                    parent=self,
+                )
+                wizard.exec()
+                self.output_text.append("Figure wizard closed.")
+
     def _on_batch_finished(self, results):
         success = sum(1 for r in results if r["success"])
         failed = len(results) - success
@@ -573,6 +720,55 @@ class HomePage(QWidget):
                     self.output_text.append(f"  - {Path(r['path']).name}: {r['error']}")
         
         self._reset_ui()
+
+        # Offer to review figures for successful profiles
+        ok_results = [r for r in results if r["success"]]
+        if ok_results:
+            reply = QMessageBox.question(
+                self, "Review Batch Figures",
+                f"Open Figure Wizard for {len(ok_results)} successful profile(s)?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if reply == QMessageBox.Yes:
+                self._open_batch_figure_browser(ok_results)
+
+    def _open_batch_figure_browser(self, ok_results):
+        """Let user pick a batch profile and open the wizard for it."""
+        from PySide6.QtWidgets import QInputDialog
+
+        names = []
+        for r in ok_results:
+            res = r.get("result", {})
+            strip_dir = res.get("strip_directory", "")
+            label = Path(r["path"]).stem
+            if strip_dir and Path(strip_dir).exists():
+                names.append((label, strip_dir, res.get("output_directory", "")))
+
+        if not names:
+            QMessageBox.information(
+                self, "No Figures", "No strip directories found."
+            )
+            return
+
+        labels = [n[0] for n in names]
+        chosen, ok = QInputDialog.getItem(
+            self, "Select Profile",
+            "Choose a profile to review figures:",
+            labels, 0, False,
+        )
+        if not ok:
+            return
+
+        idx = labels.index(chosen)
+        _, strip_dir, output_dir = names[idx]
+        wizard = FigureWizardDialog(
+            strip_dir=str(strip_dir),
+            output_dir=str(output_dir or strip_dir),
+            has_dual_resonance=False,
+            parent=self,
+        )
+        wizard.exec()
+        self.output_text.append(f"Figure wizard closed for: {chosen}")
 
     def _on_error(self, error):
         self.output_text.append(f"\nERROR: {error}")

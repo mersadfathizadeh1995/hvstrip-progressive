@@ -10,24 +10,19 @@ import matplotlib.gridspec as gridspec
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel,
     QPushButton, QFileDialog, QLineEdit, QTextEdit, QSplitter,
-    QSpinBox, QDoubleSpinBox, QCheckBox, QMessageBox, QTabWidget,
-    QTableWidget, QTableWidgetItem, QHeaderView, QListWidget, QListWidgetItem,
-    QComboBox,
+    QSpinBox, QDoubleSpinBox, QCheckBox, QComboBox, QMessageBox, QTabWidget,
+    QTableWidget, QTableWidgetItem, QHeaderView,
 )
 from PySide6.QtCore import Qt, Signal, QThread
 
 from ..widgets.plot_widget import MatplotlibWidget
 from ..widgets.layer_table_widget import LayerTableWidget
 from ..widgets.profile_preview_widget import ProfilePreviewWidget
-from ..dialogs.multi_profile_dialog import (
-    MultiProfilePickerDialog, FigureSettings, ProfileResult,
-    get_palette_colors, _PALETTE_NAMES, _MARKER_COLORS, _MARKER_SHAPES,
-    _darken_color,
-)
-from ..dialogs.output_viewer_dialog import OutputViewerDialog, load_output_folder
-from ...core.soil_profile import SoilProfile, Layer
+from .multi_profile_tab import MultiProfileTab
+from ...core.soil_profile import SoilProfile, Layer, compute_halfspace_display_depth
 from ...core.velocity_utils import VelocityConverter
 from ...core.hv_forward import compute_hv_curve
+from ..dialogs.engine_settings_dialog import EngineSettingsDialog
 
 
 class ForwardWorker(QThread):
@@ -35,14 +30,17 @@ class ForwardWorker(QThread):
     finished_signal = Signal(tuple)
     error = Signal(str)
 
-    def __init__(self, model_path, config):
+    def __init__(self, model_path, config, engine_name="diffuse_field"):
         super().__init__()
         self.model_path = model_path
         self.config = config
+        self.engine_name = engine_name
 
     def run(self):
         try:
-            freqs, amps = compute_hv_curve(self.model_path, self.config)
+            freqs, amps = compute_hv_curve(
+                self.model_path, self.config, engine_name=self.engine_name,
+            )
             self.finished_signal.emit((freqs, amps))
         except Exception as e:
             self.error.emit(str(e))
@@ -114,6 +112,18 @@ class ForwardModelingPage(QWidget):
         self.nf_spin.setValue(500)
         config_layout.addWidget(self.nf_spin)
 
+        config_layout.addWidget(QLabel("Engine:"))
+        self.engine_combo = QComboBox()
+        self.engine_combo.addItems(["diffuse_field", "sh_wave", "ellipticity"])
+        config_layout.addWidget(self.engine_combo)
+
+        self._engine_settings_config = {}
+        btn_engine_settings = QPushButton("\u2699")
+        btn_engine_settings.setMaximumWidth(30)
+        btn_engine_settings.setToolTip("Engine settings")
+        btn_engine_settings.clicked.connect(self._open_engine_settings)
+        config_layout.addWidget(btn_engine_settings)
+
         config_layout.addStretch()
         left_layout.addWidget(config_group)
 
@@ -182,6 +192,16 @@ class ForwardModelingPage(QWidget):
         self.show_vs_check.setChecked(True)
         self.show_vs_check.stateChanged.connect(self._update_plot)
         plot_options.addWidget(self.show_vs_check)
+
+        plot_options.addWidget(QLabel("HS %:"))
+        self.hs_ratio_spin = QDoubleSpinBox()
+        self.hs_ratio_spin.setRange(10, 100)
+        self.hs_ratio_spin.setValue(25)
+        self.hs_ratio_spin.setSingleStep(5)
+        self.hs_ratio_spin.setSuffix("%")
+        self.hs_ratio_spin.setToolTip("Half-space display depth as % of total finite depth")
+        self.hs_ratio_spin.valueChanged.connect(self._update_plot)
+        plot_options.addWidget(self.hs_ratio_spin)
 
         self.btn_pick = QPushButton("Select f0")
         self.btn_pick.setCheckable(True)
@@ -411,555 +431,21 @@ class ForwardModelingPage(QWidget):
         return widget
 
     def _create_multi_tab(self):
-        """Create the Multiple Profiles tab for batch Excel processing."""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-
-        info = QLabel(
-            "Load multiple Excel (.xlsx) profile files and process them sequentially.\n"
-            "Each file: Thickness | Vs | Vp | Density (last row = halfspace)."
+        """Create the Multiple Profiles tab (delegated to MultiProfileTab)."""
+        self._multi_tab = MultiProfileTab(
+            get_freq_config=lambda: {
+                "fmin": self.fmin_spin.value(),
+                "fmax": self.fmax_spin.value(),
+                "nf": self.nf_spin.value(),
+            },
+            get_output_dir=lambda: self.outdir_edit.text().strip(),
+            get_engine_name=lambda: self.engine_combo.currentText(),
+            parent=self,
         )
-        info.setStyleSheet("color: gray; font-style: italic;")
-        layout.addWidget(info)
-
-        # File list
-        self.multi_file_list = QListWidget()
-        self.multi_file_list.setSelectionMode(QListWidget.ExtendedSelection)
-        layout.addWidget(self.multi_file_list)
-
-        file_btns = QHBoxLayout()
-        btn_add = QPushButton("Add Files…")
-        btn_add.clicked.connect(self._multi_add_files)
-        file_btns.addWidget(btn_add)
-
-        btn_add_folder = QPushButton("Add Folder…")
-        btn_add_folder.clicked.connect(self._multi_add_folder)
-        file_btns.addWidget(btn_add_folder)
-
-        btn_remove = QPushButton("Remove Selected")
-        btn_remove.clicked.connect(self._multi_remove_selected)
-        file_btns.addWidget(btn_remove)
-
-        btn_clear = QPushButton("Clear All")
-        btn_clear.clicked.connect(self._multi_clear_all)
-        file_btns.addWidget(btn_clear)
-
-        file_btns.addStretch()
-        layout.addLayout(file_btns)
-
-        # Figure settings
-        fig_group = QGroupBox("Figure Settings")
-        fig_lay = QVBoxLayout(fig_group)
-
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("DPI:"))
-        self.multi_dpi_spin = QSpinBox()
-        self.multi_dpi_spin.setRange(72, 600)
-        self.multi_dpi_spin.setValue(300)
-        row1.addWidget(self.multi_dpi_spin)
-
-        row1.addWidget(QLabel("Width:"))
-        self.multi_fig_w = QDoubleSpinBox()
-        self.multi_fig_w.setRange(4.0, 24.0)
-        self.multi_fig_w.setValue(10.0)
-        self.multi_fig_w.setSuffix(" in")
-        row1.addWidget(self.multi_fig_w)
-
-        row1.addWidget(QLabel("Height:"))
-        self.multi_fig_h = QDoubleSpinBox()
-        self.multi_fig_h.setRange(3.0, 16.0)
-        self.multi_fig_h.setValue(5.0)
-        self.multi_fig_h.setSuffix(" in")
-        row1.addWidget(self.multi_fig_h)
-
-        row1.addWidget(QLabel("Font:"))
-        self.multi_font_spin = QSpinBox()
-        self.multi_font_spin.setRange(6, 24)
-        self.multi_font_spin.setValue(12)
-        row1.addWidget(self.multi_font_spin)
-
-        row1.addStretch()
-        fig_lay.addLayout(row1)
-
-        row2 = QHBoxLayout()
-        self.multi_logx = QCheckBox("Log X")
-        self.multi_logx.setChecked(True)
-        row2.addWidget(self.multi_logx)
-
-        self.multi_logy = QCheckBox("Log Y")
-        row2.addWidget(self.multi_logy)
-
-        self.multi_grid = QCheckBox("Grid")
-        self.multi_grid.setChecked(True)
-        row2.addWidget(self.multi_grid)
-
-        self.multi_png = QCheckBox("PNG")
-        self.multi_png.setChecked(True)
-        row2.addWidget(self.multi_png)
-
-        self.multi_pdf = QCheckBox("PDF")
-        self.multi_pdf.setChecked(True)
-        row2.addWidget(self.multi_pdf)
-
-        self.multi_show_vs = QCheckBox("Show Vs Profile")
-        row2.addWidget(self.multi_show_vs)
-
-        row2.addStretch()
-        fig_lay.addLayout(row2)
-
-        # Combined plot settings
-        comb_group = QGroupBox("Combined Plot Settings")
-        comb_lay = QVBoxLayout(comb_group)
-
-        row3 = QHBoxLayout()
-        row3.addWidget(QLabel("Color Palette:"))
-        self.multi_palette = QComboBox()
-        self.multi_palette.addItems(_PALETTE_NAMES)
-        row3.addWidget(self.multi_palette)
-
-        row3.addWidget(QLabel("Line α:"))
-        self.multi_alpha = QDoubleSpinBox()
-        self.multi_alpha.setRange(0.1, 1.0)
-        self.multi_alpha.setValue(0.45)
-        self.multi_alpha.setSingleStep(0.05)
-        row3.addWidget(self.multi_alpha)
-
-        row3.addWidget(QLabel("Line W:"))
-        self.multi_line_w = QDoubleSpinBox()
-        self.multi_line_w.setRange(0.3, 5.0)
-        self.multi_line_w.setValue(1.0)
-        self.multi_line_w.setSingleStep(0.1)
-        row3.addWidget(self.multi_line_w)
-
-        row3.addWidget(QLabel("Median W:"))
-        self.multi_median_w = QDoubleSpinBox()
-        self.multi_median_w.setRange(1.0, 8.0)
-        self.multi_median_w.setValue(3.0)
-        self.multi_median_w.setSingleStep(0.5)
-        row3.addWidget(self.multi_median_w)
-
-        row3.addStretch()
-        comb_lay.addLayout(row3)
-
-        row4 = QHBoxLayout()
-        self.multi_show_median = QCheckBox("Show Median Curve")
-        self.multi_show_median.setChecked(True)
-        row4.addWidget(self.multi_show_median)
-
-        self.multi_show_sec = QCheckBox("Show Secondary Peaks")
-        self.multi_show_sec.setChecked(True)
-        row4.addWidget(self.multi_show_sec)
-
-        row4.addStretch()
-        comb_lay.addLayout(row4)
-
-        fig_lay.addWidget(comb_group)
-
-        layout.addWidget(fig_group)
-
-        # Action buttons row
-        btn_row = QHBoxLayout()
-
-        self.btn_run_multi = QPushButton("Run All Profiles")
-        self.btn_run_multi.setStyleSheet(
-            "background-color: #0078d4; color: white; padding: 8px 16px; font-size: 13px;"
+        self._multi_tab.status_message.connect(
+            lambda msg: self.results_text.setText(msg)
         )
-        self.btn_run_multi.clicked.connect(self._run_multi_profiles)
-        btn_row.addWidget(self.btn_run_multi)
-
-        self.btn_load_output = QPushButton("Load Results Folder")
-        self.btn_load_output.setStyleSheet(
-            "background-color: #107c10; color: white; padding: 8px 16px; font-size: 13px;"
-        )
-        self.btn_load_output.setToolTip(
-            "Open a previously saved output folder to view combined curves"
-        )
-        self.btn_load_output.clicked.connect(self._load_multi_output)
-        btn_row.addWidget(self.btn_load_output)
-
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
-
-        self.multi_status = QLabel("")
-        layout.addWidget(self.multi_status)
-
-        return widget
-
-    def _load_multi_output(self):
-        """Open a saved output folder and display combined curves in a viewer."""
-        folder = QFileDialog.getExistingDirectory(
-            self, "Select Output Folder with Profile Subfolders"
-        )
-        if not folder:
-            return
-
-        folder_path = Path(folder)
-        results, median_result = load_output_folder(folder_path)
-
-        if not results:
-            QMessageBox.warning(
-                self, "No Data Found",
-                f"No profile subfolders with hv_curve.csv found in:\n{folder}"
-            )
-            return
-
-        fig_settings = self._get_fig_settings()
-        self.multi_status.setText(
-            f"Loaded {len(results)} profiles from {folder_path.name}"
-        )
-        self.multi_status.setStyleSheet("color: green; font-weight: bold;")
-
-        dialog = OutputViewerDialog(
-            results, median_result, fig_settings,
-            source_folder=folder, parent=self,
-        )
-        dialog.exec()
-
-    def _multi_add_files(self):
-        paths, _ = QFileDialog.getOpenFileNames(
-            self, "Select Excel Profile Files", "",
-            "Excel Files (*.xlsx);;All Files (*)"
-        )
-        for p in paths:
-            if not any(
-                self.multi_file_list.item(i).data(Qt.UserRole) == p
-                for i in range(self.multi_file_list.count())
-            ):
-                item = QListWidgetItem(Path(p).name)
-                item.setData(Qt.UserRole, p)
-                self.multi_file_list.addItem(item)
-
-    def _multi_add_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Folder with .xlsx Files")
-        if folder:
-            for p in sorted(Path(folder).glob("*.xlsx")):
-                full = str(p)
-                if not any(
-                    self.multi_file_list.item(i).data(Qt.UserRole) == full
-                    for i in range(self.multi_file_list.count())
-                ):
-                    item = QListWidgetItem(p.name)
-                    item.setData(Qt.UserRole, full)
-                    self.multi_file_list.addItem(item)
-
-    def _multi_remove_selected(self):
-        for item in self.multi_file_list.selectedItems():
-            self.multi_file_list.takeItem(self.multi_file_list.row(item))
-
-    def _multi_clear_all(self):
-        self.multi_file_list.clear()
-
-    def _get_fig_settings(self) -> FigureSettings:
-        return FigureSettings(
-            dpi=self.multi_dpi_spin.value(),
-            width=self.multi_fig_w.value(),
-            height=self.multi_fig_h.value(),
-            font_size=self.multi_font_spin.value(),
-            title_size=self.multi_font_spin.value() + 1,
-            legend_size=self.multi_font_spin.value() - 2,
-            log_x=self.multi_logx.isChecked(),
-            log_y=self.multi_logy.isChecked(),
-            grid=self.multi_grid.isChecked(),
-            save_png=self.multi_png.isChecked(),
-            save_pdf=self.multi_pdf.isChecked(),
-            show_vs=self.multi_show_vs.isChecked(),
-            color_palette=self.multi_palette.currentText(),
-            individual_alpha=self.multi_alpha.value(),
-            individual_linewidth=self.multi_line_w.value(),
-            median_linewidth=self.multi_median_w.value(),
-            show_median=self.multi_show_median.isChecked(),
-            show_secondary_peaks=self.multi_show_sec.isChecked(),
-        )
-
-    def _run_multi_profiles(self):
-        """Load all Excel files, open the sequential picker dialog, and save results."""
-        n = self.multi_file_list.count()
-        if n == 0:
-            QMessageBox.warning(self, "No Files", "Please add at least one Excel profile file.")
-            return
-
-        outdir = self.outdir_edit.text().strip()
-        if not outdir:
-            QMessageBox.warning(self, "No Output", "Please set an output directory first.")
-            return
-
-        # Parse all Excel files
-        profiles = []
-        errors = []
-        for i in range(n):
-            fpath = self.multi_file_list.item(i).data(Qt.UserRole)
-            try:
-                prof = SoilProfile.from_excel_file(fpath)
-                profiles.append((Path(fpath).stem, prof))
-            except Exception as e:
-                errors.append(f"{Path(fpath).name}: {e}")
-
-        if errors:
-            QMessageBox.warning(
-                self, "Parse Errors",
-                f"Could not load {len(errors)} file(s):\n" + "\n".join(errors[:10])
-            )
-        if not profiles:
-            return
-
-        freq_config = {
-            "fmin": self.fmin_spin.value(),
-            "fmax": self.fmax_spin.value(),
-            "nf": self.nf_spin.value(),
-        }
-        fig_settings = self._get_fig_settings()
-
-        dialog = MultiProfilePickerDialog(profiles, freq_config, fig_settings, self)
-
-        def _on_report(results, median):
-            s = dialog._fig_settings
-            self._save_multi_results(results, outdir, s, median)
-            # Save the dialog's current plot view alongside report
-            out = Path(outdir)
-            out.mkdir(parents=True, exist_ok=True)
-            for ext in (["png"] if s.save_png else []) + (["pdf"] if s.save_pdf else []):
-                dialog.save_current_plot(
-                    str(out / f"median_step_view.{ext}"), dpi=s.dpi
-                )
-            self.multi_status.setText(
-                f"Report saved to {outdir} (dialog still open)"
-            )
-            self.multi_status.setStyleSheet("color: green; font-weight: bold;")
-
-        dialog.report_requested.connect(_on_report)
-
-        if dialog.exec():
-            results = dialog.get_results()
-            median_result = dialog.get_median_result()
-            self._save_multi_results(results, outdir, dialog._fig_settings, median_result)
-
-    def _save_multi_results(self, results: list, outdir: str, s: FigureSettings,
-                            median_result=None):
-        """Save per-profile folders + combined overlay plot."""
-        import matplotlib.pyplot as plt
-
-        out = Path(outdir)
-        out.mkdir(parents=True, exist_ok=True)
-        extensions = []
-        if s.save_png:
-            extensions.append("png")
-        if s.save_pdf:
-            extensions.append("pdf")
-        if not extensions:
-            extensions = ["png"]
-
-        saved_count = 0
-
-        for r in results:
-            if r.freqs is None:
-                continue
-
-            folder = out / r.name
-            folder.mkdir(parents=True, exist_ok=True)
-
-            # CSV
-            csv_path = folder / "hv_curve.csv"
-            with open(csv_path, "w") as f:
-                f.write("frequency,amplitude\n")
-                for freq, amp in zip(r.freqs, r.amps):
-                    f.write(f"{freq},{amp}\n")
-
-            # Peak info
-            peak_path = folder / "peak_info.txt"
-            with open(peak_path, "w") as f:
-                if r.f0 is not None:
-                    f.write(f"f0_Frequency_Hz,{r.f0[0]:.6f}\n")
-                    f.write(f"f0_Amplitude,{r.f0[1]:.6f}\n")
-                    f.write(f"f0_Index,{r.f0[2]}\n")
-                for i, (sf, sa, si) in enumerate(r.secondary_peaks):
-                    f.write(f"Secondary_{i+1}_Frequency_Hz,{sf:.6f}\n")
-                    f.write(f"Secondary_{i+1}_Amplitude,{sa:.6f}\n")
-                    f.write(f"Secondary_{i+1}_Index,{si}\n")
-
-            # HV-only figure
-            fig = plt.figure(figsize=(s.width, s.height))
-            ax = fig.add_subplot(111)
-            MultiProfilePickerDialog._draw_hv(ax, r, s)
-            fig.tight_layout()
-            for ext in extensions:
-                fig.savefig(folder / f"hv_forward_curve.{ext}", dpi=s.dpi, bbox_inches="tight")
-            plt.close(fig)
-
-            # HV + Vs figure (optional)
-            if s.show_vs and r.profile is not None:
-                fig2 = plt.figure(figsize=(s.width * 1.4, s.height))
-                gs = gridspec.GridSpec(1, 2, width_ratios=[4, 1], wspace=0.25)
-                ax_hv = fig2.add_subplot(gs[0])
-                ax_vs = fig2.add_subplot(gs[1])
-                MultiProfilePickerDialog._draw_hv(ax_hv, r, s)
-                MultiProfilePickerDialog._draw_vs(ax_vs, r.profile, s)
-                fig2.tight_layout()
-                for ext in extensions:
-                    fig2.savefig(folder / f"hv_forward_with_vs.{ext}", dpi=s.dpi, bbox_inches="tight")
-                plt.close(fig2)
-
-            saved_count += 1
-
-        # Combined overlay plot
-        computed = [r for r in results if r.freqs is not None]
-        if computed:
-            fig_c = plt.figure(figsize=(s.width, s.height))
-            ax_c = fig_c.add_subplot(111)
-
-            n_prof = len(computed)
-            colors = get_palette_colors(s.color_palette, n_prof)
-
-            # Individual profiles — lighter, thinner
-            for i, r in enumerate(computed):
-                c = colors[i]
-                ax_c.plot(
-                    r.freqs, r.amps,
-                    linewidth=s.individual_linewidth,
-                    color=c, alpha=s.individual_alpha,
-                    label=r.name,
-                )
-                # f0 peak
-                if r.f0 is not None:
-                    ax_c.scatter(
-                        r.f0[0], r.f0[1], color=c, s=100, marker="*",
-                        edgecolors="black", linewidth=0.6, zorder=5,
-                        alpha=min(s.individual_alpha + 0.3, 1.0),
-                    )
-                # Secondary peaks
-                if s.show_secondary_peaks:
-                    for sec_f, sec_a, _ in r.secondary_peaks:
-                        ax_c.scatter(
-                            sec_f, sec_a, color=c, s=70, marker="d",
-                            edgecolors="black", linewidth=0.5, zorder=4,
-                            alpha=min(s.individual_alpha + 0.2, 1.0),
-                        )
-
-            # Median HV curve — use dialog result if available, else compute
-            mr = median_result
-            med_freqs = None
-            med_amps = None
-
-            if mr is not None and mr.freqs is not None:
-                # User-selected median from dialog
-                med_freqs = mr.freqs
-                med_amps = mr.amps
-            elif s.show_median and len(computed) >= 2:
-                # Fallback: compute median automatically
-                ref_freqs = computed[0].freqs
-                all_a = np.column_stack([
-                    np.interp(ref_freqs, r.freqs, r.amps) for r in computed
-                ])
-                med_freqs = ref_freqs
-                med_amps = np.median(all_a, axis=1)
-                # Auto-detect peak
-                peak_idx = int(np.argmax(med_amps))
-                mr = ProfileResult(
-                    name="Median HV", profile=computed[0].profile,
-                    freqs=med_freqs, amps=med_amps, computed=True,
-                    f0=(float(med_freqs[peak_idx]),
-                        float(med_amps[peak_idx]), peak_idx),
-                )
-
-            f0_c = _MARKER_COLORS.get(s.f0_marker_color, "#d62728")
-            f0_m = _MARKER_SHAPES.get(s.f0_marker_shape, "*")
-            sec_c = _MARKER_COLORS.get(s.secondary_marker_color, "#2ca02c")
-            sec_m = _MARKER_SHAPES.get(s.secondary_marker_shape, "*")
-
-            if med_freqs is not None and mr is not None:
-                ax_c.plot(
-                    med_freqs, med_amps, color="black",
-                    linewidth=s.median_linewidth, linestyle="-",
-                    label="Median HV", zorder=10,
-                )
-                if mr.f0 is not None:
-                    ax_c.scatter(
-                        mr.f0[0], mr.f0[1], color=f0_c,
-                        s=s.f0_marker_size, marker=f0_m,
-                        edgecolors=_darken_color(f0_c), linewidth=1.5,
-                        zorder=11,
-                        label=f"Median f0 = {mr.f0[0]:.2f} Hz",
-                    )
-                if s.show_secondary_peaks:
-                    for sec_f, sec_a, _ in mr.secondary_peaks:
-                        ax_c.scatter(
-                            sec_f, sec_a, color=sec_c,
-                            s=s.secondary_marker_size, marker=sec_m,
-                            edgecolors=_darken_color(sec_c), linewidth=1.2,
-                            zorder=10,
-                            label=f"Median Sec. ({sec_f:.2f} Hz, A={sec_a:.2f})",
-                        )
-
-            ax_c.set_xlabel("Frequency (Hz)", fontsize=s.font_size)
-            ax_c.set_ylabel("H/V Amplitude Ratio", fontsize=s.font_size)
-            ax_c.set_title("Combined HV Curves — All Profiles",
-                           fontsize=s.title_size, fontweight="bold")
-            if s.log_x:
-                ax_c.set_xscale("log")
-            if s.log_y:
-                ax_c.set_yscale("log")
-            if s.grid:
-                ax_c.grid(True, alpha=0.3, which="both")
-            ax_c.legend(loc="upper right", fontsize=max(s.legend_size - 1, 6), ncol=2)
-            fig_c.tight_layout()
-            for ext in extensions:
-                fig_c.savefig(out / f"combined_hv_curves.{ext}",
-                              dpi=s.dpi, bbox_inches="tight")
-            plt.close(fig_c)
-
-            # Combined summary CSV
-            summary_path = out / "combined_summary.csv"
-            with open(summary_path, "w") as f:
-                f.write("Profile,f0_Hz,f0_Amplitude")
-                if s.show_secondary_peaks:
-                    f.write(",Secondary_Peaks")
-                f.write("\n")
-                for r in computed:
-                    f0_f = f"{r.f0[0]:.6f}" if r.f0 else ""
-                    f0_a = f"{r.f0[1]:.6f}" if r.f0 else ""
-                    row = f"{r.name},{f0_f},{f0_a}"
-                    if s.show_secondary_peaks:
-                        sec_str = "; ".join(
-                            f"{sf:.3f} Hz" for sf, _, _ in r.secondary_peaks
-                        ) if r.secondary_peaks else ""
-                        row += f",{sec_str}"
-                    f.write(row + "\n")
-                # Median row
-                if mr is not None and mr.f0 is not None:
-                    m_f0 = f"{mr.f0[0]:.6f}"
-                    m_a0 = f"{mr.f0[1]:.6f}"
-                    row = f"Median,{m_f0},{m_a0}"
-                    if s.show_secondary_peaks:
-                        sec_str = "; ".join(
-                            f"{sf:.3f} Hz" for sf, _, _ in mr.secondary_peaks
-                        ) if mr.secondary_peaks else ""
-                        row += f",{sec_str}"
-                    f.write(row + "\n")
-
-            # Save median curve CSV
-            if med_freqs is not None and med_amps is not None:
-                med_path = out / "median_hv_curve.csv"
-                with open(med_path, "w") as f:
-                    f.write("frequency,median_amplitude\n")
-                    for freq, amp in zip(med_freqs, med_amps):
-                        f.write(f"{freq},{amp}\n")
-                # Save median peak info
-                if mr is not None:
-                    med_peak_path = out / "median_peak_info.txt"
-                    with open(med_peak_path, "w") as f:
-                        if mr.f0 is not None:
-                            f.write(f"Median_f0_Frequency_Hz,{mr.f0[0]:.6f}\n")
-                            f.write(f"Median_f0_Amplitude,{mr.f0[1]:.6f}\n")
-                        for i, (sf, sa, si) in enumerate(mr.secondary_peaks):
-                            f.write(f"Median_Secondary_{i+1}_Frequency_Hz,{sf:.6f}\n")
-                            f.write(f"Median_Secondary_{i+1}_Amplitude,{sa:.6f}\n")
-
-        self.multi_status.setText(
-            f"Done! Saved {saved_count} profiles to {outdir}"
-        )
-        self.multi_status.setStyleSheet("color: green; font-weight: bold;")
-        self.results_text.setText(
-            f"Multiple Profiles: {saved_count} processed, saved to:\n{outdir}"
-        )
+        return self._multi_tab
 
     def _populate_reference_table(self):
         """Populate the reference table with typical nu values."""
@@ -1152,6 +638,30 @@ class ForwardModelingPage(QWidget):
             return self.layer_table.get_profile()
         return None
 
+    def _open_engine_settings(self):
+        """Open the engine settings dialog."""
+        dlg = EngineSettingsDialog(
+            self,
+            config=self._engine_settings_config,
+            active_engine=self.engine_combo.currentText(),
+        )
+        if dlg.exec():
+            self._engine_settings_config = dlg.get_config()
+
+    def _build_engine_config(self) -> dict:
+        """Build the config dict for the selected engine."""
+        engine_name = self.engine_combo.currentText()
+        engine_cfg = self._engine_settings_config.get(engine_name, {})
+        base = {
+            "fmin": self.fmin_spin.value(),
+            "fmax": self.fmax_spin.value(),
+            "nf": self.nf_spin.value(),
+        }
+        if engine_name == "ellipticity":
+            base["n_samples"] = base.pop("nf")
+        base.update(engine_cfg)
+        return base
+
     def _run_forward(self):
         """Run forward modeling."""
         tab_index = self.input_tabs.currentIndex()
@@ -1191,11 +701,7 @@ class ForwardModelingPage(QWidget):
                 model_path = f.name
             self._temp_model_path = model_path
 
-        config = {
-            "fmin": self.fmin_spin.value(),
-            "fmax": self.fmax_spin.value(),
-            "nf": self.nf_spin.value(),
-        }
+        config = self._build_engine_config()
 
         self._selected_peak = None
         self._secondary_peaks.clear()
@@ -1203,7 +709,10 @@ class ForwardModelingPage(QWidget):
         self.btn_run.setEnabled(False)
         self.results_text.setText("Computing HV curve...")
 
-        self.worker = ForwardWorker(model_path, config)
+        self.worker = ForwardWorker(
+            model_path, config,
+            engine_name=self.engine_combo.currentText(),
+        )
         self.worker.finished_signal.connect(self._on_finished)
         self.worker.error.connect(self._on_error)
         self.worker.start()
@@ -1221,10 +730,21 @@ class ForwardModelingPage(QWidget):
 
         self._selected_peak = (float(peak_freq), float(peak_amp), peak_idx)
 
+        # Compute Vs30 if profile available
+        vs30_str = ""
+        if self._active_profile is not None:
+            try:
+                from ...core.vs_average import vs_average_from_profile
+                vs_res = vs_average_from_profile(self._active_profile)
+                ext = " (extrap.)" if vs_res.extrapolated else ""
+                vs30_str = f"\nVs30 = {vs_res.vs_avg:.1f} m/s{ext}"
+            except Exception:
+                pass
+
         self.results_text.setText(
             f"f0 = {peak_freq:.3f} Hz, Amplitude: {peak_amp:.2f}\n"
             f"Range: {freqs[0]:.2f} - {freqs[-1]:.2f} Hz\n"
-            f"Points: {len(freqs)}"
+            f"Points: {len(freqs)}{vs30_str}"
         )
         self._update_selection_label()
 
@@ -1320,10 +840,15 @@ class ForwardModelingPage(QWidget):
         """Draw compact Vs profile on the given axes."""
         depths = [0.0]
         vs_vals = []
+        total_finite = sum(l.thickness for l in profile.layers if not l.is_halfspace)
+        hs_ratio = self.hs_ratio_spin.value() / 100.0
         for layer in profile.layers:
             vs_vals.append(layer.vs)
             if layer.is_halfspace:
-                depths.append(depths[-1] + max(100, depths[-1] * 0.3))
+                hs_ext = compute_halfspace_display_depth(
+                    total_finite, hs_ratio=hs_ratio,
+                )
+                depths.append(depths[-1] + hs_ext)
             else:
                 depths.append(depths[-1] + layer.thickness)
 

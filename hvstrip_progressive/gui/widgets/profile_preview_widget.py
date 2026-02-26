@@ -7,7 +7,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
 
-from ...core.soil_profile import SoilProfile
+from ...core.soil_profile import SoilProfile, compute_halfspace_display_depth
 
 
 class ProfilePreviewWidget(QWidget):
@@ -71,13 +71,14 @@ class ProfilePreviewWidget(QWidget):
         depths = [0]
         vs_values = []
         
+        total_finite = sum(
+            l.thickness for l in self._profile.layers if not l.is_halfspace
+        )
         for layer in self._profile.layers:
             if layer.is_halfspace:
-                if depths[-1] > 0:
-                    halfspace_thickness = depths[-1] * 0.3
-                else:
-                    halfspace_thickness = 20
-                depths.append(depths[-1] + halfspace_thickness)
+                depths.append(
+                    depths[-1] + compute_halfspace_display_depth(total_finite)
+                )
             else:
                 depths.append(depths[-1] + layer.thickness)
             vs_values.append(layer.vs)

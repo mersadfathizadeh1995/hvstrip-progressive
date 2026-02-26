@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt, Signal
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+from ...core.soil_profile import compute_halfspace_display_depth
 import matplotlib.pyplot as plt
 
 
@@ -337,13 +338,13 @@ class InteractivePeakPickerDialog(QDialog):
         vs_values = data[:, 2]
         
         # Calculate depths
+        total_finite = float(sum(h for h in thicknesses if h > 0))
         depths = np.zeros(len(thicknesses) + 1)
         for i, h in enumerate(thicknesses):
             if h > 0:
                 depths[i + 1] = depths[i] + h
             else:
-                # Half-space: extend to reasonable depth
-                depths[i + 1] = depths[i] + max(100, depths[i] * 0.3)
+                depths[i + 1] = depths[i] + compute_halfspace_display_depth(total_finite)
         
         n_layers = len(vs_values)
         
