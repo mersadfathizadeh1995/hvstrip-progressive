@@ -84,9 +84,6 @@ class ForwardModelingPage(QWidget):
         input_tabs.addTab(self._create_dinver_tab(), "From Dinver")
         input_tabs.addTab(self._create_editor_tab(), "Profile Editor")
         input_tabs.addTab(self._create_multi_tab(), "Multiple Profiles")
-        left_layout.addWidget(input_tabs)
-        self.input_tabs = input_tabs
-
         config_group = QGroupBox("Frequency Parameters")
         config_layout = QHBoxLayout(config_group)
 
@@ -126,6 +123,9 @@ class ForwardModelingPage(QWidget):
 
         config_layout.addStretch()
         left_layout.addWidget(config_group)
+
+        left_layout.addWidget(input_tabs)
+        self.input_tabs = input_tabs
 
         # Output directory
         outdir_group = QGroupBox("Output Directory")
