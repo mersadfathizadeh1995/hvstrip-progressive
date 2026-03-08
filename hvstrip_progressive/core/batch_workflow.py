@@ -19,16 +19,26 @@ import sys
 import time
 
 
+def _get_default_exe_path():
+    """Get default HVf executable path from hv_forward module."""
+    try:
+        from .hv_forward import DEFAULT_CONFIG
+        return DEFAULT_CONFIG["exe_path"]
+    except ImportError:
+        from hv_forward import DEFAULT_CONFIG
+        return DEFAULT_CONFIG["exe_path"]
+
+
 # Default configuration for the complete workflow
 DEFAULT_WORKFLOW_CONFIG = {
     # Stripper configuration
     "stripper": {
         "output_folder_name": "strip"
     },
-    
+
     # HV Forward modeling configuration
     "hv_forward": {
-        "exe_path": "HVf.exe",
+        "exe_path": _get_default_exe_path(),
         "fmin": 0.2,
         "fmax": 20.0,
         "nf": 71,
@@ -50,12 +60,7 @@ DEFAULT_WORKFLOW_CONFIG = {
     # Post-processing configuration
     "hv_postprocess": {
         "peak_detection": {
-            "method": "find_peaks",
-            "select": "leftmost",
-            "find_peaks_params": {"prominence": 0.2, "distance": 3},
-            "freq_min": 0.5,          # guard against edge picks at 0.2 Hz
-            "min_rel_height": 0.25,   # keep peaks with >=25% of global max
-            "exclude_first_n": 1      # ignore the very first frequency bin
+            "preset": "default",  # "default", "forward_modeling", "conservative", or "custom"
         },
         "hv_plot": {
             "x_axis_scale": "log",
@@ -90,7 +95,23 @@ DEFAULT_WORKFLOW_CONFIG = {
             "combined_filename": "combined_figure.png",
             "summary_filename": "step_summary.csv",
         }
-    }
+    },
+    
+    # Engine selection (default: diffuse_field)
+    "engine_name": "diffuse_field",
+
+    # Dual-resonance analysis (optional)
+    "dual_resonance": {
+        "enable": False,
+        "separation_ratio_threshold": 1.2,
+        "separation_shift_threshold": 0.3,
+    },
+
+    # Report generation configuration
+    "generate_report": True,  # Generate comprehensive analysis report
+    
+    # Interactive mode - skip post-processing for manual peak selection
+    "interactive_mode": False,
 }
 
 
@@ -181,7 +202,8 @@ def _compute_hv_curve_adaptive(model_path: str, cfg: Dict, compute_func):
         passes += 1
 
 def run_complete_workflow(initial_model_path: str, output_base_dir: str, 
-                         workflow_config: Optional[Dict] = None) -> Dict[str, any]:
+                         workflow_config: Optional[Dict] = None,
+                         engine_name: str = None) -> Dict[str, any]:
     """
     Run the complete progressive layer stripping workflow.
     
@@ -209,16 +231,20 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
     if workflow_config:
         config = deep_update(config, workflow_config)
     
+    # Allow explicit engine_name to override config
+    if engine_name is not None:
+        config["engine_name"] = engine_name
+    
     # Validate initial model
     if not initial_model_path.exists():
         raise FileNotFoundError(f"Initial model file not found: {initial_model_path}")
     
     print("=" * 80)
-    print("🚀 HVSR Progressive Layer Stripping - Complete Workflow")
+    print("[*] HVSR Progressive Layer Stripping - Complete Workflow")
     print("=" * 80)
-    print(f"📁 Initial model: {initial_model_path}")
-    print(f"📁 Output directory: {output_base_dir}")
-    print(f"⚙️  HVf executable: {config['hv_forward']['exe_path']}")
+    print(f"[>] Initial model: {initial_model_path}")
+    print(f"[>] Output directory: {output_base_dir}")
+    print(f"[>] HVf executable: {config['hv_forward']['exe_path']}")
     print("-" * 80)
     
     # Results dictionary
@@ -233,7 +259,7 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
         # =================================================================
         # STEP 1: LAYER STRIPPING
         # =================================================================
-        print("\n🔄 STEP 1/3: Layer Stripping")
+        print("\n[1/3] Layer Stripping")
         print("-" * 40)
         
         start_time = time.time()
@@ -252,12 +278,12 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
         )
         
         strip_time = time.time() - start_time
-        print(f"✅ Layer stripping completed in {strip_time:.2f}s")
-        print(f"📂 Strip directory: {strip_output_dir}")
+        print(f"[OK] Layer stripping completed in {strip_time:.2f}s")
+        print(f"[>] Strip directory: {strip_output_dir}")
         
         # Find all step folders
         step_folders = find_step_folders(Path(strip_output_dir))
-        print(f"📊 Generated {len(step_folders)} stripped models")
+        print(f"[>] Generated {len(step_folders)} stripped models")
         
         results["strip_directory"] = Path(strip_output_dir)
         results["step_folders"] = step_folders
@@ -265,7 +291,7 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
         # =================================================================
         # STEP 2: HV FORWARD MODELING
         # =================================================================
-        print(f"\n⚡ STEP 2/3: HV Forward Modeling")
+        print(f"\n[2/3] HV Forward Modeling")
         print("-" * 40)
         
         start_time = time.time()
@@ -281,12 +307,12 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
         
         for i, step_folder in enumerate(step_folders, 1):
             step_name = step_folder.name
-            print(f"  🔸 Processing {step_name} ({i}/{len(step_folders)})")
+            print(f"  [-] Processing {step_name} ({i}/{len(step_folders)})")
             
             # Find model file in step folder
             model_files = list(step_folder.glob("model_*.txt"))
             if not model_files:
-                print(f"    ❌ No model file found in {step_folder}")
+                print(f"    [!] No model file found in {step_folder}")
                 continue
             
             model_file = model_files[0]
@@ -303,122 +329,239 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
                     step_cfg["fmax"] = max(float(hv_forward_config.get("fmax", 20.0)) * 2.0, 40.0)
 
                 # Compute with adaptive scanning if enabled
-                (freqs, amps), used_cfg = _compute_hv_curve_adaptive(str(model_file), step_cfg, compute_hv_curve)
+                engine = config.get("engine_name", "diffuse_field")
+                compute_fn = lambda mp, cfg: compute_hv_curve(mp, cfg, engine_name=engine)
+                (freqs, amps), used_cfg = _compute_hv_curve_adaptive(str(model_file), step_cfg, compute_fn)
                 
                 # Save HV curve in same folder as model
                 hv_csv_path = step_folder / "hv_curve.csv"
                 save_hv_csv(hv_csv_path, freqs, amps)
                 
-                print(f"    ✅ HV curve saved: {hv_csv_path.name}")
+                print(f"    [OK] HV curve saved: {hv_csv_path.name}")
                 successful_hv += 1
                 
+                # Compute Vs average for this step
+                vs_avg_result = None
+                try:
+                    from .vs_average import vs_average_from_model_file
+                    vs_avg_result = vs_average_from_model_file(
+                        str(model_file), target_depth=30.0,
+                    )
+                except Exception:
+                    pass
+
                 # Store results
-                results["step_results"][step_name] = {
+                step_result = {
                     "model_file": model_file,
                     "hv_csv": hv_csv_path,
                     "n_frequencies": len(freqs),
                     "peak_amplitude": float(max(amps)),
-                    "peak_frequency": float(freqs[list(amps).index(max(amps))])
+                    "peak_frequency": float(freqs[list(amps).index(max(amps))]),
                 }
+                if vs_avg_result is not None:
+                    step_result["vs30"] = vs_avg_result.vs_avg
+                    step_result["vs30_extrapolated"] = vs_avg_result.extrapolated
+                results["step_results"][step_name] = step_result
                 
             except Exception as e:
-                print(f"    ❌ Error computing HV curve: {e}")
+                print(f"    [!] Error computing HV curve: {e}")
                 continue
         
         hv_time = time.time() - start_time
-        print(f"✅ HV forward modeling completed in {hv_time:.2f}s")
-        print(f"📊 Successfully processed {successful_hv}/{len(step_folders)} models")
+        print(f"[OK] HV forward modeling completed in {hv_time:.2f}s")
+        print(f"[>] Successfully processed {successful_hv}/{len(step_folders)} models")
         
         # =================================================================
-        # STEP 3: POST-PROCESSING
+        # STEP 3: POST-PROCESSING (skip if interactive mode)
         # =================================================================
-        print(f"\n📊 STEP 3/3: Post-Processing & Visualization")
-        print("-" * 40)
-        
-        start_time = time.time()
-        
-        # Import hv_postprocess module
-        try:
-            from .hv_postprocess import process
-        except ImportError:
-            from hv_postprocess import process
-        
-        postprocess_config = config["hv_postprocess"]
+        post_time = 0.0
         successful_post = 0
         
-        for i, step_folder in enumerate(step_folders, 1):
-            step_name = step_folder.name
-            print(f"  🔸 Post-processing {step_name} ({i}/{len(step_folders)})")
+        if config.get("interactive_mode", False):
+            print(f"\n[3/4] Post-Processing - SKIPPED (interactive mode)")
+            print("-" * 40)
+            print("[>] Post-processing will run after manual peak selection")
+            results["interactive_mode"] = True
+        else:
+            print(f"\n[3/4] Post-Processing & Visualization")
+            print("-" * 40)
             
-            # Check if we have both model and HV curve files
-            hv_csv = step_folder / "hv_curve.csv"
-            model_files = list(step_folder.glob("model_*.txt"))
+            start_time = time.time()
             
-            if not hv_csv.exists():
-                print(f"    ⚠️  No HV curve file found, skipping")
-                continue
+            # Import hv_postprocess module
+            try:
+                from .hv_postprocess import process
+            except ImportError:
+                from hv_postprocess import process
             
-            if not model_files:
-                print(f"    ⚠️  No model file found, skipping")
-                continue
+            postprocess_config = config["hv_postprocess"]
             
-            model_file = model_files[0]
+            for i, step_folder in enumerate(step_folders, 1):
+                step_name = step_folder.name
+                print(f"  [-] Post-processing {step_name} ({i}/{len(step_folders)})")
+                
+                # Check if we have both model and HV curve files
+                hv_csv = step_folder / "hv_curve.csv"
+                model_files = list(step_folder.glob("model_*.txt"))
+                
+                if not hv_csv.exists():
+                    print(f"    [!] No HV curve file found, skipping")
+                    continue
+                
+                if not model_files:
+                    print(f"    [!] No model file found, skipping")
+                    continue
+                
+                model_file = model_files[0]
+                
+                try:
+                    # Run post-processing
+                    post_results = process(
+                        str(hv_csv),
+                        str(model_file),
+                        str(step_folder),  # Output to same folder
+                        postprocess_config
+                    )
+                    
+                    print(f"    [OK] Generated {len([k for k in post_results.keys() if 'png' in k])} plots")
+                    successful_post += 1
+                    
+                    # Update results
+                    if step_name in results["step_results"]:
+                        results["step_results"][step_name].update(post_results)
+                    
+                except Exception as e:
+                    print(f"    [!] Error in post-processing: {e}")
+                    continue
+            
+            post_time = time.time() - start_time
+            print(f"[OK] Post-processing completed in {post_time:.2f}s")
+            print(f"[>] Successfully processed {successful_post}/{len(step_folders)} models")
+        
+        # =================================================================
+        # STEP 4: REPORT GENERATION (optional, skip if interactive mode)
+        # =================================================================
+        report_time = 0.0
+        if config.get("interactive_mode", False):
+            print(f"\n[4/4] Report Generation - SKIPPED (interactive mode)")
+            print("-" * 40)
+            print("[>] Report will be generated after manual peak selection")
+        elif config.get("generate_report", True):
+            print(f"\n[4/4] Report Generation")
+            print("-" * 40)
+            
+            start_time = time.time()
             
             try:
-                # Run post-processing
-                post_results = process(
-                    str(hv_csv),
-                    str(model_file),
-                    str(step_folder),  # Output to same folder
-                    postprocess_config
+                from .report_generator import ProgressiveStrippingReporter
+            except ImportError:
+                from report_generator import ProgressiveStrippingReporter
+            
+            try:
+                reporter = ProgressiveStrippingReporter(
+                    str(results["strip_directory"]),
+                    str(output_base_dir / "reports")
                 )
-                
-                print(f"    ✅ Generated {len([k for k in post_results.keys() if 'png' in k])} plots")
-                successful_post += 1
-                
-                # Update results
-                if step_name in results["step_results"]:
-                    results["step_results"][step_name].update(post_results)
-                
+                report_files = reporter.generate_comprehensive_report()
+                results["report_files"] = report_files
+                print(f"[OK] Report generation completed")
             except Exception as e:
-                print(f"    ❌ Error in post-processing: {e}")
-                continue
+                print(f"[!] Error generating report: {e}")
+                results["report_error"] = str(e)
+            
+            report_time = time.time() - start_time
         
-        post_time = time.time() - start_time
-        print(f"✅ Post-processing completed in {post_time:.2f}s")
-        print(f"📊 Successfully processed {successful_post}/{len(step_folders)} models")
-        
+        # =================================================================
+        # STEP 5: DUAL-RESONANCE ANALYSIS (optional)
+        # =================================================================
+        dual_time = 0.0
+        dr_cfg = config.get("dual_resonance", {})
+        if dr_cfg.get("enable", False) and not config.get("interactive_mode", False):
+            print(f"\n[5/5] Dual-Resonance Analysis")
+            print("-" * 40)
+
+            start_time = time.time()
+            try:
+                from .dual_resonance import (
+                    extract_dual_resonance,
+                    save_results_csv as dr_save_csv,
+                )
+                from ..visualization.resonance_plots import plot_resonance_separation
+
+                dr_result = extract_dual_resonance(
+                    str(results["strip_directory"]),
+                    profile_name=initial_model_path.stem,
+                    profile_path=str(initial_model_path),
+                )
+                results["dual_resonance"] = dr_result
+
+                # Save CSV
+                dr_dir = output_base_dir / "dual_resonance"
+                dr_dir.mkdir(parents=True, exist_ok=True)
+                dr_save_csv([dr_result], str(dr_dir / "dual_resonance.csv"))
+
+                # Save figure
+                fig_path = plot_resonance_separation(
+                    str(results["strip_directory"]),
+                    str(dr_dir / "dual_resonance.png"),
+                )
+
+                if dr_result.success:
+                    sep = "YES" if dr_result.separation_success else "NO"
+                    print(f"[OK] f0 = {dr_result.f0:.3f} Hz, "
+                          f"f1 = {dr_result.f1:.3f} Hz, "
+                          f"ratio = {dr_result.freq_ratio:.2f}, "
+                          f"separated: {sep}")
+                else:
+                    print(f"[!] {dr_result.error_message}")
+                if fig_path:
+                    print(f"[>] Figure saved: {fig_path}")
+            except Exception as e:
+                print(f"[!] Dual-resonance error: {e}")
+                results["dual_resonance_error"] = str(e)
+
+            dual_time = time.time() - start_time
+        else:
+            print(f"\n[5/5] Dual-Resonance Analysis - SKIPPED")
+
         # =================================================================
         # WORKFLOW SUMMARY
         # =================================================================
-        total_time = strip_time + hv_time + post_time
+        total_time = strip_time + hv_time + post_time + report_time + dual_time
         
         print("\n" + "=" * 80)
-        print("🎉 WORKFLOW COMPLETED SUCCESSFULLY!")
+        print("WORKFLOW COMPLETED SUCCESSFULLY!")
         print("=" * 80)
-        print(f"⏱️  Total time: {total_time:.2f}s")
-        print(f"   ├─ Layer stripping: {strip_time:.2f}s")
-        print(f"   ├─ HV forward: {hv_time:.2f}s")
-        print(f"   └─ Post-processing: {post_time:.2f}s")
-        print(f"📊 Processed {len(step_folders)} stripped models")
-        print(f"📁 All outputs saved in: {output_base_dir}")
+        print(f"Total time: {total_time:.2f}s")
+        print(f"   - Layer stripping: {strip_time:.2f}s")
+        print(f"   - HV forward: {hv_time:.2f}s")
+        print(f"   - Post-processing: {post_time:.2f}s")
+        if report_time > 0:
+            print(f"   - Report generation: {report_time:.2f}s")
+        if dual_time > 0:
+            print(f"   - Dual-resonance: {dual_time:.2f}s")
+        print(f"Processed {len(step_folders)} stripped models")
+        print(f"All outputs saved in: {output_base_dir}")
         
         # Summary of generated files
-        print(f"\n📋 Generated files per step:")
+        print(f"\nGenerated files per step:")
         for step_name, step_data in results["step_results"].items():
-            print(f"   📂 {step_name}:")
-            print(f"      ├─ model_*.txt")
-            print(f"      ├─ hv_curve.csv")
+            print(f"   [{step_name}]:")
+            print(f"      - model_*.txt")
+            print(f"      - hv_curve.csv")
             if 'hv_curve_png' in step_data:
-                print(f"      ├─ hv_curve.png")
+                print(f"      - hv_curve.png")
             if 'vs_profile_png' in step_data:
-                print(f"      ├─ vs_profile.png")
+                print(f"      - vs_profile.png")
             if 'combined_png' in step_data:
-                print(f"      ├─ combined_figure.png")
+                print(f"      - combined_figure.png")
             if 'summary_csv' in step_data:
-                print(f"      └─ summary.csv")
+                print(f"      - summary.csv")
+            if 'vs30' in step_data:
+                ext = " (extrapolated)" if step_data.get("vs30_extrapolated") else ""
+                print(f"      - Vs30 = {step_data['vs30']:.1f} m/s{ext}")
         
-        print("\n✨ Ready for analysis!")
+        print("\nReady for analysis!")
         print("=" * 80)
         
         results["success"] = True
@@ -431,7 +574,7 @@ def run_complete_workflow(initial_model_path: str, output_base_dir: str,
         }
         
     except Exception as e:
-        print(f"\n❌ WORKFLOW FAILED: {e}")
+        print(f"\n[!] WORKFLOW FAILED: {e}")
         results["success"] = False
         results["error"] = str(e)
         raise

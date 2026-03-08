@@ -1,16 +1,21 @@
-# GUI Dependencies for HVSTRIP-Progressive
-# Install with: pip install -r requirements.txt
+# HVSR Progressive Layer Stripping GUI - Requirements
+# Python 3.8+ required
 
-# PySide6 - Qt for Python
+# Qt Framework and Fluent Widgets
 PySide6>=6.5.0
+PySide6-Fluent-Widgets>=1.4.0
 
-# QFluentWidgets - Modern Fluent Design UI components
-PyQt-Fluent-Widgets>=1.4.0
-
-# For the main package (if not already installed)
-# These are already in the main package requirements but listed here for completeness
+# Scientific Computing
 numpy>=1.24.0
 scipy>=1.10.0
-matplotlib>=3.7.0
 pandas>=2.0.0
-pyyaml>=6.0
+
+# Plotting and Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Configuration Management
+PyYAML>=6.0
+
+# Additional utilities
+click>=8.1.0  # For CLI integration if needed

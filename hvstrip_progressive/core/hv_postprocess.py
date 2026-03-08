@@ -6,11 +6,19 @@ from pathlib import Path
 from typing import Dict, Tuple, Optional, List
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.signal import savgol_filter, find_peaks
+from scipy.signal import savgol_filter
+
+from .peak_detection import (
+    PEAK_DETECTION_PRESETS,
+    get_peak_detection_preset,
+    detect_peak,
+    find_all_peaks,
+)
 
 
 DEFAULT_CONFIG = {
     "peak_detection": {
+        "preset": "default",  # "default", "forward_modeling", "conservative", or "custom"
         "method": "max",  # "max", "find_peaks", or "manual"
         "select": "max",   # when using find_peaks: "max" or "leftmost"
         "manual_frequency": None,
@@ -21,6 +29,10 @@ DEFAULT_CONFIG = {
         # Additional guards to avoid boundary/artefact picks
         "min_rel_height": 0.0,   # fraction of global max (e.g., 0.25)
         "exclude_first_n": 0,    # exclude the first N bins (e.g., 1)
+        # New parameters for improved detection
+        "min_amplitude": None,   # absolute minimum peak amplitude (e.g., 2.0)
+        "check_clarity_ratio": False,  # check if peak > threshold * amp at f0/2 and 2*f0
+        "clarity_ratio_threshold": 1.5,  # multiplier for clarity check
     },
     "hv_plot": {
         "x_axis_scale": "log",
@@ -89,85 +101,6 @@ def read_model(path: Path) -> Dict:
     
     return {'n_layers': n_layers, 'layers': layers, 'step_info': step_info}
 
-
-def detect_peak(freqs: np.ndarray, amps: np.ndarray, config: Dict) -> Tuple[float, float, int]:
-    """Detect peak using configured method.
-
-    Supports:
-    - method 'manual': pick closest to manual_frequency
-    - method 'find_peaks': detect local peaks and select either highest ('max')
-      or 'leftmost' (lowest-frequency) among candidates. Optional freq_min/freq_max
-      constrain candidate peaks.
-    - method 'max' (default): global maximum amplitude, optionally constrained
-      by freq_min/freq_max if provided.
-    """
-    peak_cfg = config.get('peak_detection', {})
-    method = peak_cfg.get('method', 'max')
-    select = peak_cfg.get('select', 'max')
-    fmin = peak_cfg.get('freq_min', None)
-    fmax = peak_cfg.get('freq_max', None)
-    min_rel = float(peak_cfg.get('min_rel_height', 0.0) or 0.0)
-    excl_n = int(peak_cfg.get('exclude_first_n', 0) or 0)
-
-    # Helper to limit indices by frequency window
-    def _apply_freq_window(idxs: np.ndarray) -> np.ndarray:
-        if idxs is None or len(idxs) == 0:
-            return idxs
-        mask = np.ones(len(idxs), dtype=bool)
-        if fmin is not None:
-            mask &= freqs[idxs] >= float(fmin)
-        if fmax is not None:
-            mask &= freqs[idxs] <= float(fmax)
-        return idxs[mask]
-
-    if method == 'manual' and peak_cfg.get('manual_frequency'):
-        f_manual = float(peak_cfg['manual_frequency'])
-        idx = int(np.argmin(np.abs(freqs - f_manual)))
-        return float(freqs[idx]), float(amps[idx]), idx
-
-    if method == 'find_peaks':
-        params = peak_cfg.get('find_peaks_params', {})
-        peaks, _ = find_peaks(amps, **params)
-        peaks = np.array(peaks, dtype=int)
-        # Exclude first N bins if requested
-        if excl_n > 0 and peaks.size > 0:
-            peaks = peaks[peaks >= excl_n]
-        # Apply frequency window if any
-        peaks = _apply_freq_window(peaks)
-        # Apply relative height threshold if requested
-        if min_rel > 0 and peaks is not None and len(peaks) > 0:
-            amax = float(np.max(amps)) if len(amps) else 0.0
-            thr = amax * min_rel
-            peaks = peaks[amps[peaks] >= thr]
-        if peaks is not None and len(peaks) > 0:
-            if str(select).lower() == 'leftmost':
-                idx = int(peaks[np.argmin(freqs[peaks])])
-            else:  # 'max' or anything else falls back to highest amplitude
-                idx = int(peaks[np.argmax(amps[peaks])])
-            return float(freqs[idx]), float(amps[idx]), idx
-        # Fallback: no peaks met constraints; fall back to max below.
-
-    # Default/global max, with optional frequency constraints
-    if fmin is not None or fmax is not None or excl_n > 0 or min_rel > 0:
-        mask = np.ones_like(freqs, dtype=bool)
-        if fmin is not None:
-            mask &= freqs >= float(fmin)
-        if fmax is not None:
-            mask &= freqs <= float(fmax)
-        if excl_n > 0:
-            idxs = np.arange(len(freqs))
-            mask &= idxs >= excl_n
-        cand = np.where(mask)[0]
-        if cand.size > 0:
-            if min_rel > 0:
-                amax = float(np.max(amps)) if len(amps) else 0.0
-                thr = amax * min_rel
-                cand2 = cand[amps[cand] >= thr]
-                cand = cand2 if cand2.size > 0 else cand
-            idx_local = int(cand[np.argmax(amps[cand])])
-            return float(freqs[idx_local]), float(amps[idx_local]), idx_local
-    idx = int(np.argmax(amps))
-    return float(freqs[idx]), float(amps[idx]), idx
 
 
 def apply_smoothing(amps: np.ndarray, config: Dict) -> np.ndarray:
@@ -413,8 +346,11 @@ def process(hv_csv_path: str, model_txt_path: str, output_dir: str,
 __all__ = [
     "process",
     "detect_peak",
+    "find_all_peaks",
+    "get_peak_detection_preset",
+    "PEAK_DETECTION_PRESETS",
     "apply_smoothing",
     "read_hv_csv",
     "read_model",
-    "DEFAULT_CONFIG"
+    "DEFAULT_CONFIG",
 ]

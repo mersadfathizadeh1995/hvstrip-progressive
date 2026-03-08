@@ -115,6 +115,25 @@ An end-to-end example is included under `examples/soil_profile/`:
 Outputs are not committed to the repository (see `.gitignore`); you can regenerate them locally.
 ```
 
+## GUI
+
+The GUI is integrated under `new package/hvstrip_progressive/gui` and can be launched in multiple ways:
+
+- Easiest (Windows): double-click `hvstrip_run.bat` at the repo root. It creates a virtual environment under `new package/.venv`, installs the package and GUI requirements, and launches the app.
+- As a Python module: `python -m hvstrip_progressive.gui`
+- From the GUI folder run scripts:
+  - Windows: `new package/hvstrip_progressive/gui/run_gui.bat`
+  - Linux/macOS: `new package/hvstrip_progressive/gui/run_gui.sh`
+
+To install manually:
+
+```
+cd "new package"
+pip install -e .
+pip install -r hvstrip_progressive/gui/requirements.txt
+python -m hvstrip_progressive.gui
+```
+
 ## Peak Selection (Fundamental by Default)
 
 The workflow defaults to local peak detection (`scipy.signal.find_peaks`) and selects the lowest-frequency prominent peak (the fundamental) with `prominence=0.2` and `distance=3`. Adjust these in:

@@ -1,6 +1,11 @@
 # Default configuration for HVSR Progressive Layer Stripping Analysis
 
-# Solver configuration
+# Engine selection
+# Available: diffuse_field (default), sh_wave (planned), ellipticity (planned)
+engine:
+  name: "diffuse_field"
+
+# Solver configuration (diffuse_field engine — HVf.exe)
 solver:
   exe_path: "HVf.exe"
   fmin: 0.2
@@ -31,6 +36,12 @@ peak_detection:
   # Guards to avoid edge/artefact picks
   min_rel_height: 0.25  # fraction of global max amplitude
   exclude_first_n: 1    # ignore the first N frequency bins
+
+# Dual-resonance analysis
+dual_resonance:
+  enable: false
+  separation_ratio_threshold: 1.2   # f1/f0 must exceed this for success
+  separation_shift_threshold: 0.3   # Hz — minimum step-to-step Δf
 
 # Plotting configuration
 plotting:
