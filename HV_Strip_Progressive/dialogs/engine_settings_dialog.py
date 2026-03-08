@@ -1,197 +1,256 @@
-"""
-Engine settings dialog — 3-tab configuration for all forward engines.
+"""Engine Settings Dialog — 3-tab configuration for the three forward-modeling engines.
 
-Tab 0: Diffuse Field (HVf.exe) — path, nmr, nml, nks
-Tab 1: Rayleigh Ellipticity (gpell.exe) — path, modes, sampling, alpha, Q
-Tab 2: SH Wave Transfer — sampling, damping, Darendeli, clip
+Faithfully ports the original PySide6 EngineSettingsDialog to PyQt5.
 """
-
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
-    QFormLayout, QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox,
-    QCheckBox, QPushButton, QLabel, QFileDialog, QDialogButtonBox,
+    QFormLayout, QDoubleSpinBox, QSpinBox, QLineEdit, QPushButton,
+    QCheckBox, QComboBox, QLabel, QFileDialog, QGroupBox,
 )
 
 
 class EngineSettingsDialog(QDialog):
-    """Modal dialog for per-engine configuration."""
+    """Configure engine-specific parameters (HVf / Ellipticity / SH Wave)."""
 
-    def __init__(self, engine_configs: dict, parent=None):
+    def __init__(self, config=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Engine Settings')
-        self.resize(520, 450)
-        self._configs = {k: dict(v) for k, v in engine_configs.items()}
+        self.setWindowTitle("Engine Settings")
+        self.setMinimumWidth(520)
+        self._config = config or {}
+        self._build_ui()
+        self._load_from_config(self._config)
 
+    # ── public API ──────────────────────────────────────────────
+    def get_config(self):
+        return {
+            "diffuse_field": self._get_hvf_config(),
+            "ellipticity": self._get_ell_config(),
+            "sh_wave": self._get_sh_config(),
+        }
+
+    # ── UI build ────────────────────────────────────────────────
+    def _build_ui(self):
         layout = QVBoxLayout(self)
-        self.tabs = QTabWidget()
-        layout.addWidget(self.tabs)
+        self._tabs = QTabWidget()
+        layout.addWidget(self._tabs)
 
-        self._build_diffuse_tab()
-        self._build_ellipticity_tab()
-        self._build_sh_tab()
+        self._tabs.addTab(self._build_hvf_tab(), "Diffuse Wave Field")
+        self._tabs.addTab(self._build_ell_tab(), "Rayleigh Ellipticity")
+        self._tabs.addTab(self._build_sh_tab(), "SH Wave Transfer")
 
         # Buttons
-        bbox = QDialogButtonBox()
-        ok_btn = bbox.addButton(QDialogButtonBox.Ok)
-        cancel_btn = bbox.addButton(QDialogButtonBox.Cancel)
-        restore_btn = bbox.addButton('Restore Defaults', QDialogButtonBox.ResetRole)
-        ok_btn.clicked.connect(self.accept)
-        cancel_btn.clicked.connect(self.reject)
-        restore_btn.clicked.connect(self._restore_defaults)
-        layout.addWidget(bbox)
+        btn_row = QHBoxLayout()
+        btn_defaults = QPushButton("Restore Defaults")
+        btn_defaults.clicked.connect(self._reset_defaults)
+        btn_ok = QPushButton("OK")
+        btn_ok.clicked.connect(self.accept)
+        btn_cancel = QPushButton("Cancel")
+        btn_cancel.clicked.connect(self.reject)
+        btn_row.addWidget(btn_defaults)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_ok)
+        btn_row.addWidget(btn_cancel)
+        layout.addLayout(btn_row)
 
-    # ── Tab builders ─────────────────────────────────────────────────
-
-    def _build_diffuse_tab(self):
+    # ── Tab 1: Diffuse Wave Field (HVf) ────────────────────────
+    def _build_hvf_tab(self):
         w = QWidget()
         form = QFormLayout(w)
-        cfg = self._configs.get('diffuse_field', {})
 
+        self.hvf_exe = QLineEdit()
+        self.hvf_exe.setPlaceholderText("Path to HVf executable (auto-detect)")
+        btn = QPushButton("...")
+        btn.setFixedWidth(30)
+        btn.clicked.connect(lambda: self._browse(self.hvf_exe, "Executable (*.exe)"))
         row = QHBoxLayout()
-        self.hvf_path = QLineEdit(cfg.get('exe_path', 'HVf.exe'))
-        browse = QPushButton('Browse…')
-        browse.clicked.connect(lambda: self._browse(self.hvf_path, 'HVf Executable (*.exe)'))
-        row.addWidget(self.hvf_path, 1)
-        row.addWidget(browse)
-        form.addRow('HVf Executable:', row)
+        row.addWidget(self.hvf_exe)
+        row.addWidget(btn)
+        form.addRow("HVf Executable:", row)
 
-        self.nmr_spin = QSpinBox(); self.nmr_spin.setRange(1, 100); self.nmr_spin.setValue(cfg.get('nmr', 10))
-        form.addRow('Rayleigh modes (nmr):', self.nmr_spin)
-        self.nml_spin = QSpinBox(); self.nml_spin.setRange(1, 100); self.nml_spin.setValue(cfg.get('nml', 10))
-        form.addRow('Love modes (nml):', self.nml_spin)
-        self.nks_spin = QSpinBox(); self.nks_spin.setRange(1, 100); self.nks_spin.setValue(cfg.get('nks', 10))
-        form.addRow('Wavenumber steps (nks):', self.nks_spin)
+        self.hvf_fmin = QDoubleSpinBox(); self.hvf_fmin.setRange(0.01, 100); self.hvf_fmin.setValue(0.2)
+        self.hvf_fmax = QDoubleSpinBox(); self.hvf_fmax.setRange(0.1, 200); self.hvf_fmax.setValue(20.0)
+        self.hvf_nf = QSpinBox(); self.hvf_nf.setRange(10, 2000); self.hvf_nf.setValue(71)
+        form.addRow("Freq Min (Hz):", self.hvf_fmin)
+        form.addRow("Freq Max (Hz):", self.hvf_fmax)
+        form.addRow("Freq Points:", self.hvf_nf)
 
-        self.tabs.addTab(w, 'Diffuse Field')
+        self.hvf_nmr = QSpinBox(); self.hvf_nmr.setRange(1, 100); self.hvf_nmr.setValue(10)
+        self.hvf_nml = QSpinBox(); self.hvf_nml.setRange(1, 100); self.hvf_nml.setValue(10)
+        self.hvf_nks = QSpinBox(); self.hvf_nks.setRange(1, 100); self.hvf_nks.setValue(10)
+        form.addRow("Rayleigh Modes (nmr):", self.hvf_nmr)
+        form.addRow("Love Modes (nml):", self.hvf_nml)
+        form.addRow("Wavenumber Steps (nks):", self.hvf_nks)
 
-    def _build_ellipticity_tab(self):
+        return w
+
+    # ── Tab 2: Rayleigh Ellipticity ─────────────────────────────
+    def _build_ell_tab(self):
         w = QWidget()
         form = QFormLayout(w)
-        cfg = self._configs.get('ellipticity', {})
 
-        for attr, label, default, filt in [
-            ('gpell_path', 'gpell Executable:', '', 'gpell (*.exe)'),
-            ('git_bash_path', 'Git Bash:', '', 'bash (*.exe)'),
-        ]:
-            row = QHBoxLayout()
-            edit = QLineEdit(cfg.get(attr, default))
-            btn = QPushButton('Browse…')
-            btn.clicked.connect(lambda _, e=edit, f=filt: self._browse(e, f))
-            row.addWidget(edit, 1); row.addWidget(btn)
-            form.addRow(f'{label}', row)
-            setattr(self, f'ell_{attr}', edit)
+        self.ell_gpell = QLineEdit()
+        self.ell_gpell.setPlaceholderText("Path to gpell executable")
+        btn1 = QPushButton("..."); btn1.setFixedWidth(30)
+        btn1.clicked.connect(lambda: self._browse(self.ell_gpell, "Executable (*.exe)"))
+        r1 = QHBoxLayout(); r1.addWidget(self.ell_gpell); r1.addWidget(btn1)
+        form.addRow("gpell Path:", r1)
 
-        self.ell_modes = QSpinBox(); self.ell_modes.setRange(1, 10); self.ell_modes.setValue(cfg.get('n_modes', 1))
-        form.addRow('Rayleigh Modes:', self.ell_modes)
+        self.ell_bash = QLineEdit()
+        self.ell_bash.setPlaceholderText("C:/Program Files/Git/bin/bash.exe")
+        btn2 = QPushButton("..."); btn2.setFixedWidth(30)
+        btn2.clicked.connect(lambda: self._browse(self.ell_bash, "Executable (*.exe)"))
+        r2 = QHBoxLayout(); r2.addWidget(self.ell_bash); r2.addWidget(btn2)
+        form.addRow("Git Bash Path:", r2)
 
-        self.ell_sampling = QComboBox(); self.ell_sampling.addItems(['log', 'frequency', 'period'])
-        self.ell_sampling.setCurrentText(cfg.get('sampling', 'log'))
-        form.addRow('Sampling:', self.ell_sampling)
+        self.ell_fmin = QDoubleSpinBox(); self.ell_fmin.setRange(0.01, 100); self.ell_fmin.setValue(0.5)
+        self.ell_fmax = QDoubleSpinBox(); self.ell_fmax.setRange(0.1, 200); self.ell_fmax.setValue(20.0)
+        self.ell_nsamples = QSpinBox(); self.ell_nsamples.setRange(50, 5000); self.ell_nsamples.setValue(500)
+        self.ell_nmodes = QSpinBox(); self.ell_nmodes.setRange(1, 10); self.ell_nmodes.setValue(1)
+        form.addRow("Freq Min (Hz):", self.ell_fmin)
+        form.addRow("Freq Max (Hz):", self.ell_fmax)
+        form.addRow("Samples:", self.ell_nsamples)
+        form.addRow("Modes:", self.ell_nmodes)
 
-        self.ell_alpha = QDoubleSpinBox(); self.ell_alpha.setRange(0, 0.99); self.ell_alpha.setDecimals(2)
-        self.ell_alpha.setValue(cfg.get('alpha', 0.0))
-        form.addRow('Love mixing (α):', self.ell_alpha)
+        self.ell_sampling = QComboBox(); self.ell_sampling.addItems(["log", "frequency", "period"])
+        form.addRow("Sampling:", self.ell_sampling)
 
-        self.ell_auto_q = QCheckBox('Auto-compute Qp/Qs')
-        self.ell_auto_q.setChecked(cfg.get('auto_q', True))
+        self.ell_absolute = QCheckBox("Output absolute ellipticity")
+        self.ell_peak_refine = QCheckBox("Peak-refined curves (-pc)")
+        form.addRow(self.ell_absolute)
+        form.addRow(self.ell_peak_refine)
+
+        self.ell_love_alpha = QDoubleSpinBox(); self.ell_love_alpha.setRange(0, 0.99); self.ell_love_alpha.setValue(0)
+        self.ell_love_alpha.setSingleStep(0.05)
+        form.addRow("Love mixing (α):", self.ell_love_alpha)
+
+        self.ell_auto_q = QCheckBox("Auto-compute Qp/Qs")
+        self.ell_auto_q.setChecked(True)
         form.addRow(self.ell_auto_q)
 
-        self.ell_q_formula = QComboBox(); self.ell_q_formula.addItems(['default', 'brocher', 'constant'])
-        self.ell_q_formula.setCurrentText(cfg.get('q_formula', 'default'))
-        form.addRow('Q Formula:', self.ell_q_formula)
+        self.ell_q_formula = QComboBox(); self.ell_q_formula.addItems(["default", "brocher", "constant"])
+        form.addRow("Q Formula:", self.ell_q_formula)
 
-        self.ell_clip = QSpinBox(); self.ell_clip.setRange(0, 1000); self.ell_clip.setValue(cfg.get('clip_factor', 0))
-        form.addRow('Clip Factor:', self.ell_clip)
+        self.ell_clip = QDoubleSpinBox(); self.ell_clip.setRange(0, 1000); self.ell_clip.setValue(0)
+        form.addRow("Clip Factor:", self.ell_clip)
 
-        self.ell_abs = QCheckBox('Output absolute ellipticity')
-        self.ell_abs.setChecked(cfg.get('absolute', False))
-        form.addRow(self.ell_abs)
+        return w
 
-        self.ell_pc = QCheckBox('Peak-refined curves (-pc)')
-        self.ell_pc.setChecked(cfg.get('peak_refined', False))
-        form.addRow(self.ell_pc)
-
-        self.tabs.addTab(w, 'Ellipticity')
-
+    # ── Tab 3: SH Wave Transfer ─────────────────────────────────
     def _build_sh_tab(self):
         w = QWidget()
         form = QFormLayout(w)
-        cfg = self._configs.get('sh_wave', {})
 
-        self.sh_sampling = QComboBox(); self.sh_sampling.addItems(['log', 'linear'])
-        self.sh_sampling.setCurrentText(cfg.get('sampling', 'log'))
-        form.addRow('Sampling:', self.sh_sampling)
+        self.sh_fmin = QDoubleSpinBox(); self.sh_fmin.setRange(0.01, 100); self.sh_fmin.setValue(0.1)
+        self.sh_fmax = QDoubleSpinBox(); self.sh_fmax.setRange(0.1, 200); self.sh_fmax.setValue(30.0)
+        self.sh_nsamples = QSpinBox(); self.sh_nsamples.setRange(50, 5000); self.sh_nsamples.setValue(512)
+        form.addRow("Freq Min (Hz):", self.sh_fmin)
+        form.addRow("Freq Max (Hz):", self.sh_fmax)
+        form.addRow("Samples:", self.sh_nsamples)
 
-        self.sh_dsoil = QDoubleSpinBox(); self.sh_dsoil.setRange(0, 20); self.sh_dsoil.setDecimals(1)
-        self.sh_dsoil.setValue(cfg.get('soil_damping', 0.0)); self.sh_dsoil.setSuffix('%')
-        self.sh_dsoil.setSpecialValueText('Auto (Darendeli)')
-        form.addRow('Soil Damping:', self.sh_dsoil)
+        self.sh_sampling = QComboBox(); self.sh_sampling.addItems(["log", "linear"])
+        form.addRow("Sampling:", self.sh_sampling)
 
-        self.sh_drock = QDoubleSpinBox(); self.sh_drock.setRange(0, 20); self.sh_drock.setDecimals(1)
-        self.sh_drock.setValue(cfg.get('rock_damping', 1.0)); self.sh_drock.setSuffix('%')
-        form.addRow('Rock Damping:', self.sh_drock)
+        self.sh_dsoil = QDoubleSpinBox(); self.sh_dsoil.setRange(0, 30); self.sh_dsoil.setValue(0)
+        self.sh_dsoil.setSpecialValueText("Auto")
+        self.sh_drock = QDoubleSpinBox(); self.sh_drock.setRange(0, 30); self.sh_drock.setValue(0.5)
+        form.addRow("Soil Damping (%):", self.sh_dsoil)
+        form.addRow("Rock Damping (%):", self.sh_drock)
 
-        self.sh_ref = QComboBox()
-        self.sh_ref.addItems(['0 (outcrop)', 'within (top of rock)'])
-        self.sh_ref.setCurrentIndex(cfg.get('reference_depth', 0))
-        form.addRow('Reference Depth:', self.sh_ref)
+        self.sh_d_tf = QComboBox()
+        self.sh_d_tf.addItems(["0 (outcrop)", "within (top of rock)"])
+        form.addRow("Transfer Function:", self.sh_d_tf)
 
         self.sh_darendeli = QComboBox()
-        self.sh_darendeli.addItems(['1 — Mean', '2 — Mean + 1σ', '3 — Mean − 1σ'])
-        self.sh_darendeli.setCurrentIndex(cfg.get('darendeli_curve', 1) - 1)
-        form.addRow('Darendeli Curve:', self.sh_darendeli)
+        self.sh_darendeli.addItems(["1 (Mean)", "2 (Mean+1σ)", "3 (Mean-1σ)"])
+        form.addRow("Darendeli Curve:", self.sh_darendeli)
 
-        self.sh_gamma = QDoubleSpinBox(); self.sh_gamma.setRange(10, 30); self.sh_gamma.setDecimals(1)
-        self.sh_gamma.setValue(cfg.get('gamma_max', 25.0)); self.sh_gamma.setSuffix(' kN/m³')
-        form.addRow('Max Unit Weight:', self.sh_gamma)
+        self.sh_gamma_max = QDoubleSpinBox(); self.sh_gamma_max.setRange(10, 30); self.sh_gamma_max.setValue(23.0)
+        form.addRow("γ_max (kN/m³):", self.sh_gamma_max)
 
-        self.sh_clip = QSpinBox(); self.sh_clip.setRange(0, 1000)
-        self.sh_clip.setValue(cfg.get('clip_tf', 0)); self.sh_clip.setSpecialValueText('Off')
-        form.addRow('Clip TF Above:', self.sh_clip)
+        self.sh_clip = QDoubleSpinBox(); self.sh_clip.setRange(0, 100); self.sh_clip.setValue(0)
+        self.sh_clip.setSpecialValueText("Off")
+        form.addRow("Clip TF above:", self.sh_clip)
 
-        self.tabs.addTab(w, 'SH Wave')
+        return w
 
-    # ── Helpers ──────────────────────────────────────────────────────
-
-    def _browse(self, edit: QLineEdit, filt: str):
-        path, _ = QFileDialog.getOpenFileName(self, 'Select File', '', filt)
-        if path:
-            edit.setText(path)
-
-    def _restore_defaults(self):
-        self.hvf_path.setText('HVf.exe')
-        self.nmr_spin.setValue(10); self.nml_spin.setValue(10); self.nks_spin.setValue(10)
-        self.ell_modes.setValue(1); self.ell_alpha.setValue(0.0); self.ell_clip.setValue(0)
-        self.sh_dsoil.setValue(0.0); self.sh_drock.setValue(1.0); self.sh_clip.setValue(0)
-
-    def get_configs(self) -> dict:
-        """Return updated engine configs."""
+    # ── config ──────────────────────────────────────────────────
+    def _get_hvf_config(self):
         return {
-            'diffuse_field': {
-                'exe_path': self.hvf_path.text(),
-                'nmr': self.nmr_spin.value(),
-                'nml': self.nml_spin.value(),
-                'nks': self.nks_spin.value(),
-            },
-            'ellipticity': {
-                'gpell_path': self.ell_gpell_path.text(),
-                'git_bash_path': self.ell_git_bash_path.text(),
-                'n_modes': self.ell_modes.value(),
-                'sampling': self.ell_sampling.currentText(),
-                'alpha': self.ell_alpha.value(),
-                'auto_q': self.ell_auto_q.isChecked(),
-                'q_formula': self.ell_q_formula.currentText(),
-                'clip_factor': self.ell_clip.value(),
-                'absolute': self.ell_abs.isChecked(),
-                'peak_refined': self.ell_pc.isChecked(),
-            },
-            'sh_wave': {
-                'sampling': self.sh_sampling.currentText(),
-                'soil_damping': self.sh_dsoil.value(),
-                'rock_damping': self.sh_drock.value(),
-                'reference_depth': self.sh_ref.currentIndex(),
-                'darendeli_curve': self.sh_darendeli.currentIndex() + 1,
-                'gamma_max': self.sh_gamma.value(),
-                'clip_tf': self.sh_clip.value(),
-            },
+            "exe_path": self.hvf_exe.text(),
+            "fmin": self.hvf_fmin.value(),
+            "fmax": self.hvf_fmax.value(),
+            "nf": self.hvf_nf.value(),
+            "nmr": self.hvf_nmr.value(),
+            "nml": self.hvf_nml.value(),
+            "nks": self.hvf_nks.value(),
         }
+
+    def _get_ell_config(self):
+        return {
+            "gpell_path": self.ell_gpell.text(),
+            "git_bash_path": self.ell_bash.text(),
+            "fmin": self.ell_fmin.value(),
+            "fmax": self.ell_fmax.value(),
+            "n_samples": self.ell_nsamples.value(),
+            "n_modes": self.ell_nmodes.value(),
+            "sampling": self.ell_sampling.currentText(),
+            "absolute": self.ell_absolute.isChecked(),
+            "peak_refinement": self.ell_peak_refine.isChecked(),
+            "love_alpha": self.ell_love_alpha.value(),
+            "auto_q": self.ell_auto_q.isChecked(),
+            "q_formula": self.ell_q_formula.currentText(),
+            "clip_factor": self.ell_clip.value(),
+        }
+
+    def _get_sh_config(self):
+        return {
+            "fmin": self.sh_fmin.value(),
+            "fmax": self.sh_fmax.value(),
+            "n_samples": self.sh_nsamples.value(),
+            "sampling": self.sh_sampling.currentText(),
+            "Dsoil": self.sh_dsoil.value() if self.sh_dsoil.value() > 0 else None,
+            "Drock": self.sh_drock.value(),
+            "d_tf": self.sh_d_tf.currentIndex(),
+            "darendeli_curvetype": self.sh_darendeli.currentIndex() + 1,
+            "gamma_max": self.sh_gamma_max.value(),
+            "clip_tf": self.sh_clip.value() if self.sh_clip.value() > 0 else None,
+        }
+
+    def _load_from_config(self, cfg):
+        hvf = cfg.get("diffuse_field", {})
+        if hvf.get("exe_path"): self.hvf_exe.setText(hvf["exe_path"])
+        if "fmin" in hvf: self.hvf_fmin.setValue(hvf["fmin"])
+        if "fmax" in hvf: self.hvf_fmax.setValue(hvf["fmax"])
+        if "nf" in hvf: self.hvf_nf.setValue(hvf["nf"])
+        if "nmr" in hvf: self.hvf_nmr.setValue(hvf["nmr"])
+        if "nml" in hvf: self.hvf_nml.setValue(hvf["nml"])
+        if "nks" in hvf: self.hvf_nks.setValue(hvf["nks"])
+
+        ell = cfg.get("ellipticity", {})
+        if ell.get("gpell_path"): self.ell_gpell.setText(ell["gpell_path"])
+        if ell.get("git_bash_path"): self.ell_bash.setText(ell["git_bash_path"])
+        if "fmin" in ell: self.ell_fmin.setValue(ell["fmin"])
+        if "fmax" in ell: self.ell_fmax.setValue(ell["fmax"])
+        if "n_samples" in ell: self.ell_nsamples.setValue(ell["n_samples"])
+        if "n_modes" in ell: self.ell_nmodes.setValue(ell["n_modes"])
+
+        sh = cfg.get("sh_wave", {})
+        if "fmin" in sh: self.sh_fmin.setValue(sh["fmin"])
+        if "fmax" in sh: self.sh_fmax.setValue(sh["fmax"])
+        if "n_samples" in sh: self.sh_nsamples.setValue(sh["n_samples"])
+        if "Drock" in sh: self.sh_drock.setValue(sh["Drock"])
+
+    def _reset_defaults(self):
+        self.hvf_exe.clear()
+        self.hvf_fmin.setValue(0.2); self.hvf_fmax.setValue(20.0); self.hvf_nf.setValue(71)
+        self.hvf_nmr.setValue(10); self.hvf_nml.setValue(10); self.hvf_nks.setValue(10)
+        self.ell_gpell.clear(); self.ell_bash.clear()
+        self.ell_fmin.setValue(0.5); self.ell_fmax.setValue(20.0); self.ell_nsamples.setValue(500)
+        self.ell_nmodes.setValue(1)
+        self.sh_fmin.setValue(0.1); self.sh_fmax.setValue(30.0); self.sh_nsamples.setValue(512)
+        self.sh_dsoil.setValue(0); self.sh_drock.setValue(0.5)
+
+    def _browse(self, line_edit, file_filter):
+        path, _ = QFileDialog.getOpenFileName(self, "Select File", "", file_filter)
+        if path:
+            line_edit.setText(path)

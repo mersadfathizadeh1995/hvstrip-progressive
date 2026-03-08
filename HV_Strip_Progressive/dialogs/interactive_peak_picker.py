@@ -1,316 +1,227 @@
-"""
-Interactive peak picker dialog — step-by-step peak selection.
+"""Interactive Peak Picker Dialog — step-by-step manual peak selection.
 
-Allows the user to walk through each stripping step, click on the
-HV curve to select f0, undo, auto-detect, skip, or finish.
+Shows each stripping step's HV curve and lets the user click to select f0.
 """
-
+import os
 import numpy as np
-from PyQt5.QtCore import Qt, pyqtSignal
+
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QPushButton, QLabel, QSplitter, QWidget, QMessageBox,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QMessageBox, QSplitter, QTextEdit,
 )
 
-from ..widgets.plot_canvas import PlotCanvas
+from ..widgets.plot_widget import MatplotlibWidget
 
 
-class InteractivePeakPicker(QDialog):
-    """Modal dialog for step-by-step interactive peak selection."""
+class InteractivePeakPickerDialog(QDialog):
+    """Step-through dialog for manually picking peaks on HV curves."""
 
-    peaks_selected = pyqtSignal(dict)
-
-    def __init__(self, steps: list, parent=None):
+    def __init__(self, result=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Interactive Peak Picker')
-        self.resize(1100, 700)
-        self.setMinimumSize(900, 600)
-
-        self._steps = steps
+        self.setWindowTitle("Interactive Peak Selection")
+        self.resize(900, 600)
+        self._result = result or {}
+        self._steps = []
         self._current = 0
-        self._picks = {}  # {step_name: (freq, amp, idx)}
-        self._undo_stack = []
-        self._click_enabled = True
+        self._selected_peaks = {}
+        self._mode = "f0"
 
-        layout = QHBoxLayout(self)
+        self._load_steps()
+        self._build_ui()
+        self._show_current()
 
-        # ── Left: step list ──────────────────────────────────────────
-        left = QWidget()
-        left.setFixedWidth(200)
-        ll = QVBoxLayout(left)
-        ll.setContentsMargins(0, 0, 0, 0)
+    def _load_steps(self):
+        """Load HV curve data from result dict."""
+        result = self._result
+        if isinstance(result, dict):
+            # Try to extract step data from result
+            if "steps" in result:
+                self._steps = result["steps"]
+            elif "result" in result and isinstance(result["result"], dict):
+                if "steps" in result["result"]:
+                    self._steps = result["result"]["steps"]
+            # Try directory-based loading
+            output_dir = result.get("output_dir", "")
+            if output_dir and os.path.isdir(output_dir) and not self._steps:
+                import glob
+                csv_files = sorted(glob.glob(os.path.join(output_dir, "**/hv_curve*.csv"), recursive=True))
+                for i, csv_path in enumerate(csv_files):
+                    try:
+                        data = np.loadtxt(csv_path, delimiter=",", skiprows=1)
+                        step_name = os.path.basename(os.path.dirname(csv_path))
+                        self._steps.append({
+                            "name": step_name or f"Step {i}",
+                            "freq": data[:, 0].tolist(),
+                            "amp": data[:, 1].tolist(),
+                        })
+                    except Exception:
+                        continue
 
-        ll.addWidget(QLabel('Steps:'))
-        self.step_list = QListWidget()
-        for i, step in enumerate(steps):
-            name = step.get('name', f'Step {i}')
-            self.step_list.addItem(name)
-        self.step_list.currentRowChanged.connect(self._on_step_clicked)
-        ll.addWidget(self.step_list)
-        layout.addWidget(left)
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        splitter = QSplitter(Qt.Horizontal)
 
-        # ── Right: canvas + controls ─────────────────────────────────
-        right = QWidget()
-        rl = QVBoxLayout(right)
-        rl.setContentsMargins(0, 0, 0, 0)
+        # Left — plot
+        left = MatplotlibWidget(figsize=(8, 5))
+        self._plot = left
+        splitter.addWidget(left)
 
-        self.info_label = QLabel()
-        self.info_label.setStyleSheet('font-weight: bold;')
-        rl.addWidget(self.info_label)
+        # Right — info + controls
+        right_w = QLabel()
+        right_layout = QVBoxLayout(right_w)
+        right_layout.setContentsMargins(8, 8, 8, 8)
 
-        self.canvas = PlotCanvas(figsize=(12, 5), dpi=100)
-        rl.addWidget(self.canvas, 1)
+        self._step_label = QLabel("Step 0 / 0")
+        self._step_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        right_layout.addWidget(self._step_label)
 
-        # Pick toggle
-        ctrl1 = QHBoxLayout()
-        self.pick_btn = QPushButton('Click Selection: ON')
-        self.pick_btn.setCheckable(True)
-        self.pick_btn.setChecked(True)
-        self.pick_btn.setStyleSheet('QPushButton:checked { background-color: #27ae60; color: white; }')
-        self.pick_btn.toggled.connect(self._toggle_pick)
-        ctrl1.addWidget(self.pick_btn)
+        self._info_text = QTextEdit()
+        self._info_text.setReadOnly(True)
+        self._info_text.setMaximumHeight(120)
+        right_layout.addWidget(self._info_text)
 
-        self.vs_btn = QPushButton('Show Vs Profile')
-        self.vs_btn.setCheckable(True)
-        self.vs_btn.setChecked(True)
-        self.vs_btn.setStyleSheet('QPushButton:checked { background-color: #2E86AB; color: white; }')
-        self.vs_btn.toggled.connect(lambda: self._plot_current())
-        ctrl1.addWidget(self.vs_btn)
-        ctrl1.addStretch()
-        rl.addLayout(ctrl1)
+        # Mode toggle
+        mode_row = QHBoxLayout()
+        self._btn_f0 = QPushButton("Select f0")
+        self._btn_f0.setCheckable(True); self._btn_f0.setChecked(True)
+        self._btn_f0.setStyleSheet("background-color: #4CAF50; color: white; padding: 4px;")
+        self._btn_f0.clicked.connect(lambda: self._set_mode("f0"))
+        self._btn_sec = QPushButton("Select Secondary")
+        self._btn_sec.setCheckable(True)
+        self._btn_sec.setStyleSheet("background-color: #FF9800; color: white; padding: 4px;")
+        self._btn_sec.clicked.connect(lambda: self._set_mode("secondary"))
+        mode_row.addWidget(self._btn_f0)
+        mode_row.addWidget(self._btn_sec)
+        right_layout.addLayout(mode_row)
 
-        self.sel_label = QLabel('Click on curve to select f0')
-        self.sel_label.setStyleSheet('color: gray;')
-        rl.addWidget(self.sel_label)
+        self._peak_label = QLabel("Click on the HV curve to select peak")
+        right_layout.addWidget(self._peak_label)
 
         # Navigation
-        ctrl2 = QHBoxLayout()
-        self.prev_btn = QPushButton('◀ Previous')
-        self.prev_btn.clicked.connect(self._on_prev)
-        ctrl2.addWidget(self.prev_btn)
-        self.next_btn = QPushButton('Next ▶')
-        self.next_btn.clicked.connect(self._on_next)
-        ctrl2.addWidget(self.next_btn)
+        nav = QHBoxLayout()
+        self._btn_prev = QPushButton("← Previous")
+        self._btn_prev.clicked.connect(self._prev_step)
+        self._btn_next = QPushButton("Next →")
+        self._btn_next.clicked.connect(self._next_step)
+        nav.addWidget(self._btn_prev)
+        nav.addWidget(self._btn_next)
+        right_layout.addLayout(nav)
 
-        ctrl2.addWidget(self._sep())
+        right_layout.addStretch()
 
-        undo_btn = QPushButton('Undo')
-        undo_btn.clicked.connect(self._on_undo)
-        ctrl2.addWidget(undo_btn)
-        auto_btn = QPushButton('Auto-detect')
-        auto_btn.clicked.connect(self._on_auto)
-        ctrl2.addWidget(auto_btn)
-        skip_btn = QPushButton('Skip')
-        skip_btn.clicked.connect(self._on_skip)
-        ctrl2.addWidget(skip_btn)
+        # Accept/Cancel
+        btn_row = QHBoxLayout()
+        btn_accept = QPushButton("Accept All")
+        btn_accept.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 6px;")
+        btn_accept.clicked.connect(self.accept)
+        btn_cancel = QPushButton("Cancel")
+        btn_cancel.clicked.connect(self.reject)
+        btn_row.addWidget(btn_accept)
+        btn_row.addWidget(btn_cancel)
+        right_layout.addLayout(btn_row)
 
-        ctrl2.addWidget(self._sep())
+        splitter.addWidget(right_w)
+        splitter.setSizes([600, 300])
+        layout.addWidget(splitter)
 
-        finish_btn = QPushButton('Finish')
-        finish_btn.setStyleSheet('background-color: #27ae60; color: white; font-weight: bold;')
-        finish_btn.clicked.connect(self._on_finish)
-        ctrl2.addWidget(finish_btn)
-        cancel_btn = QPushButton('Cancel')
-        cancel_btn.clicked.connect(self.reject)
-        ctrl2.addWidget(cancel_btn)
-        rl.addLayout(ctrl2)
+        # Connect click
+        self._plot.get_figure().canvas.mpl_connect("button_press_event", self._on_click)
 
-        layout.addWidget(right, 1)
+    def _set_mode(self, mode):
+        self._mode = mode
+        self._btn_f0.setChecked(mode == "f0")
+        self._btn_sec.setChecked(mode == "secondary")
 
-        # Matplotlib click
-        self.canvas.canvas.mpl_connect('button_press_event', self._on_click)
+    def _show_current(self):
+        if not self._steps:
+            self._step_label.setText("No steps available")
+            return
 
-        # Show first step
-        self.step_list.setCurrentRow(0)
-
-    # ── Helpers ──────────────────────────────────────────────────────
-
-    @staticmethod
-    def _sep():
-        lbl = QLabel('|')
-        lbl.setStyleSheet('color: #ccc;')
-        return lbl
-
-    def _step_name(self, idx):
-        return self._steps[idx].get('name', f'Step {idx}')
-
-    def _update_list_marks(self):
-        for i in range(self.step_list.count()):
-            name = self._step_name(i)
-            mark = '✓ ' if name in self._picks else ''
-            self.step_list.item(i).setText(f'{mark}{name}')
-
-    # ── Navigation ───────────────────────────────────────────────────
-
-    def _on_step_clicked(self, row):
-        if 0 <= row < len(self._steps):
-            self._current = row
-            self._plot_current()
-
-    def _on_prev(self):
-        if self._current > 0:
-            self._current -= 1
-            self.step_list.setCurrentRow(self._current)
-
-    def _on_next(self):
-        if self._current < len(self._steps) - 1:
-            self._current += 1
-            self.step_list.setCurrentRow(self._current)
-
-    # ── Plotting ─────────────────────────────────────────────────────
-
-    def _plot_current(self):
         step = self._steps[self._current]
-        freqs = step.get('freqs')
-        amps = step.get('amps')
-        n = len(self._steps)
-        picked = sum(1 for s in self._steps if self._step_name(self._steps.index(s)) in self._picks)
+        self._step_label.setText(f"Step {self._current + 1} / {len(self._steps)}: {step.get('name', '')}")
 
-        self.info_label.setText(
-            f'Step {self._current + 1} of {n}: {self._step_name(self._current)} '
-            f'| Peaks selected: {picked}/{n}')
-        self.prev_btn.setEnabled(self._current > 0)
-        self.next_btn.setEnabled(self._current < n - 1)
+        fig = self._plot.get_figure()
+        fig.clear()
+        ax = fig.add_subplot(111)
 
-        self.canvas.clear()
-        show_vs = self.vs_btn.isChecked() and step.get('profile') is not None
+        freq = np.array(step.get("freq", []))
+        amp = np.array(step.get("amp", []))
+        if len(freq) > 0:
+            ax.plot(freq, amp, "b-", linewidth=1.5, label="H/V")
+            ax.set_xscale("log")
 
-        if show_vs:
-            gs = self.canvas.figure.add_gridspec(1, 2, width_ratios=[4, 1])
-            ax = self.canvas.figure.add_subplot(gs[0])
-            ax_vs = self.canvas.figure.add_subplot(gs[1])
-        else:
-            ax = self.canvas.add_subplot(111)
-            ax_vs = None
+        # Show selected peaks
+        peaks = self._selected_peaks.get(self._current, {})
+        if "f0" in peaks:
+            f = peaks["f0"]["freq"]
+            a = peaks["f0"]["amp"]
+            ax.plot(f, a, "r*", markersize=15, label=f"f0={f:.2f} Hz")
+        if "secondary" in peaks:
+            for sp in peaks["secondary"]:
+                ax.plot(sp["freq"], sp["amp"], "o", color="orange", markersize=8)
 
-        if freqs is not None and amps is not None:
-            ax.plot(freqs, amps, 'b-', lw=1.5, label='H/V')
-
-            # Auto-detected peak (gray circle)
-            auto_f0 = step.get('f0')
-            if auto_f0:
-                ax.plot(auto_f0[0], auto_f0[1], 'o', color='gray', ms=10,
-                        alpha=0.5, label='Auto f0')
-
-            # Manual pick (red star)
-            name = self._step_name(self._current)
-            if name in self._picks:
-                pf, pa, pi = self._picks[name]
-                ax.plot(pf, pa, 'r*', ms=14, zorder=5, label=f'f0 = {pf:.2f} Hz')
-                ax.axvline(pf, color='r', ls='--', alpha=0.5)
-
-        ax.set_xscale('log')
+        ax.set_xlabel("Frequency (Hz)")
+        ax.set_ylabel("H/V Amplitude")
+        ax.set_title(step.get("name", f"Step {self._current + 1}"))
         ax.grid(True, alpha=0.3)
-        ax.set_xlabel('Frequency (Hz)')
-        ax.set_ylabel('H/V Amplitude')
-        ax.legend(fontsize=8)
+        ax.legend()
+        fig.tight_layout()
+        self._plot.refresh()
 
-        if ax_vs and step.get('profile'):
-            self._draw_vs(ax_vs, step['profile'])
+        # Update info
+        info = f"Name: {step.get('name', 'N/A')}\n"
+        info += f"Points: {len(freq)}\n"
+        if "f0" in peaks:
+            info += f"f0: {peaks['f0']['freq']:.3f} Hz (amp: {peaks['f0']['amp']:.3f})\n"
+        if "secondary" in peaks:
+            for i, sp in enumerate(peaks["secondary"]):
+                info += f"Secondary {i+1}: {sp['freq']:.3f} Hz\n"
+        self._info_text.setPlainText(info)
 
-        self.canvas.tight_layout()
-        self.canvas.draw()
-        self._update_sel_label()
-
-    def _draw_vs(self, ax, profile):
-        depths, vs_vals = [0.0], []
-        for layer in profile.layers:
-            vs_vals.extend([layer.vs, layer.vs])
-            depths.append(depths[-1])
-            depths.append(depths[-1] + (layer.thickness if not layer.is_halfspace else 5))
-        depths = depths[:len(vs_vals)]
-        ax.step(vs_vals, depths, where='post', color='teal', lw=1.5)
-        ax.invert_yaxis()
-        ax.set_xlabel('Vs', fontsize=8)
-        ax.tick_params(labelsize=7)
-        ax.grid(True, alpha=0.3)
-
-    # ── Click picking ────────────────────────────────────────────────
-
-    def _toggle_pick(self, on):
-        self._click_enabled = on
-        self.pick_btn.setText(f'Click Selection: {"ON" if on else "OFF"}')
+        self._btn_prev.setEnabled(self._current > 0)
+        self._btn_next.setEnabled(self._current < len(self._steps) - 1)
 
     def _on_click(self, event):
-        if not self._click_enabled or event.inaxes is None:
+        if event.inaxes is None or not self._steps:
             return
         step = self._steps[self._current]
-        freqs, amps = step.get('freqs'), step.get('amps')
-        if freqs is None:
+        freq = np.array(step.get("freq", []))
+        amp = np.array(step.get("amp", []))
+        if len(freq) == 0:
             return
 
-        log_f = np.log10(np.maximum(freqs, 1e-10))
-        log_c = np.log10(max(event.xdata, 1e-10))
-        idx = int(np.argmin(np.abs(log_f - log_c)))
-        name = self._step_name(self._current)
+        # Nearest point (log-distance)
+        log_freq = np.log10(np.maximum(freq, 1e-6))
+        log_click = np.log10(max(event.xdata, 1e-6))
+        amp_range = max(amp) - min(amp) if max(amp) > min(amp) else 1
+        freq_range = max(log_freq) - min(log_freq) if max(log_freq) > min(log_freq) else 1
+        dist = ((log_freq - log_click) / freq_range) ** 2 + ((amp - event.ydata) / amp_range) ** 2
+        idx = np.argmin(dist)
 
-        prev = self._picks.get(name)
-        self._undo_stack.append((name, prev))
-        self._picks[name] = (float(freqs[idx]), float(amps[idx]), idx)
+        if self._current not in self._selected_peaks:
+            self._selected_peaks[self._current] = {}
 
-        self._update_list_marks()
-        self._plot_current()
-
-    def _on_undo(self):
-        if not self._undo_stack:
-            return
-        name, prev = self._undo_stack.pop()
-        if prev is None:
-            self._picks.pop(name, None)
+        if self._mode == "f0":
+            self._selected_peaks[self._current]["f0"] = {"freq": freq[idx], "amp": amp[idx]}
+            self._peak_label.setText(f"f0 = {freq[idx]:.3f} Hz")
         else:
-            self._picks[name] = prev
-        self._update_list_marks()
-        self._plot_current()
+            if "secondary" not in self._selected_peaks[self._current]:
+                self._selected_peaks[self._current]["secondary"] = []
+            self._selected_peaks[self._current]["secondary"].append({"freq": freq[idx], "amp": amp[idx]})
+            self._peak_label.setText(f"Secondary at {freq[idx]:.3f} Hz")
 
-    def _on_auto(self):
-        step = self._steps[self._current]
-        amps = step.get('amps')
-        freqs = step.get('freqs')
-        if amps is None:
-            return
-        idx = int(np.argmax(amps))
-        name = self._step_name(self._current)
-        prev = self._picks.get(name)
-        self._undo_stack.append((name, prev))
-        self._picks[name] = (float(freqs[idx]), float(amps[idx]), idx)
-        self._update_list_marks()
-        self._plot_current()
+        self._show_current()
 
-    def _on_skip(self):
-        self._on_auto()
-        self._on_next()
+    def _prev_step(self):
+        if self._current > 0:
+            self._current -= 1
+            self._show_current()
 
-    def _on_finish(self):
-        unselected = [self._step_name(i) for i in range(len(self._steps))
-                       if self._step_name(i) not in self._picks]
-        if unselected:
-            ret = QMessageBox.question(
-                self, 'Unselected Steps',
-                f'{len(unselected)} step(s) have no peak selected.\n'
-                'Auto-detect for remaining?',
-                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
-            if ret == QMessageBox.Cancel:
-                return
-            if ret == QMessageBox.Yes:
-                for name in unselected:
-                    idx_s = next(i for i, s in enumerate(self._steps) if self._step_name(i) == name)
-                    step = self._steps[idx_s]
-                    amps = step.get('amps')
-                    freqs = step.get('freqs')
-                    if amps is not None:
-                        idx = int(np.argmax(amps))
-                        self._picks[name] = (float(freqs[idx]), float(amps[idx]), idx)
+    def _next_step(self):
+        if self._current < len(self._steps) - 1:
+            self._current += 1
+            self._show_current()
 
-        self.peaks_selected.emit(self._picks)
-        self.accept()
-
-    def _update_sel_label(self):
-        name = self._step_name(self._current)
-        if name in self._picks:
-            f, a, _ = self._picks[name]
-            self.sel_label.setText(f'Selected: f0 = {f:.2f} Hz, A = {a:.2f}')
-        else:
-            self.sel_label.setText('Click on curve to select f0')
-
-    def get_selected_peaks(self) -> dict:
-        return dict(self._picks)
+    def get_selected_peaks(self):
+        return self._selected_peaks

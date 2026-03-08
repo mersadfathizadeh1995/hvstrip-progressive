@@ -1,1 +1,1 @@
-"""QThread workers for background computation."""
+"""Workers sub-package."""

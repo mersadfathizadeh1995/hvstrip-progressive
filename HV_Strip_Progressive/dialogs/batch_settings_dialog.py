@@ -1,202 +1,151 @@
-"""
-Batch settings dialog — configuration for batch HV Strip processing.
+"""Batch Settings Dialog — 4-tab pre-batch configuration.
 
-4 tabs: Frequency, Options, Figure Defaults, Peak Detection.
+Shown before batch processing to confirm/adjust settings.
 """
-
-from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QDialog, QTabWidget, QVBoxLayout, QFormLayout, QDialogButtonBox,
-    QWidget, QSpinBox, QDoubleSpinBox, QCheckBox, QComboBox, QLabel,
+    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
+    QFormLayout, QDoubleSpinBox, QSpinBox, QComboBox, QCheckBox,
+    QPushButton, QLabel,
 )
 
 
 class BatchSettingsDialog(QDialog):
-    """Modal dialog for configuring batch processing parameters."""
+    """Pre-batch configuration dialog."""
 
-    def __init__(self, config: dict = None, parent=None):
+    def __init__(self, config=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Batch Settings')
-        self.resize(450, 420)
-        self.setMinimumWidth(400)
+        self.setWindowTitle("Batch Processing Settings")
+        self.setMinimumWidth(480)
+        self._config = config or {}
+        self._build_ui()
+        self._load_config(self._config)
 
-        cfg = config or {}
-        layout = QVBoxLayout(self)
-
-        tabs = QTabWidget()
-
-        # ── Tab 1: Frequency ─────────────────────────────────────────
-        freq_tab = QWidget()
-        fl = QFormLayout(freq_tab)
-        freq = cfg.get('frequency', {})
-
-        self.fmin = QDoubleSpinBox()
-        self.fmin.setRange(0.01, 50); self.fmin.setValue(freq.get('fmin', 0.3))
-        self.fmin.setDecimals(2)
-        fl.addRow('f_min (Hz):', self.fmin)
-
-        self.fmax = QDoubleSpinBox()
-        self.fmax.setRange(1, 200); self.fmax.setValue(freq.get('fmax', 40))
-        self.fmax.setDecimals(1)
-        fl.addRow('f_max (Hz):', self.fmax)
-
-        self.nf = QSpinBox()
-        self.nf.setRange(50, 2000); self.nf.setValue(freq.get('nf', 300))
-        fl.addRow('Num. Freq. Points:', self.nf)
-
-        self.adaptive = QCheckBox('Adaptive frequency range')
-        self.adaptive.setChecked(freq.get('adaptive', True))
-        self.adaptive.setToolTip('Auto-expand range if peak near boundary')
-        fl.addRow(self.adaptive)
-
-        tabs.addTab(freq_tab, 'Frequency')
-
-        # ── Tab 2: Options ───────────────────────────────────────────
-        opt_tab = QWidget()
-        ol = QFormLayout(opt_tab)
-        opts = cfg.get('options', {})
-
-        self.gen_report = QCheckBox('Generate report figures per profile')
-        self.gen_report.setChecked(opts.get('generate_report', True))
-        ol.addRow(self.gen_report)
-
-        self.interactive = QCheckBox('Interactive peak picking')
-        self.interactive.setChecked(opts.get('interactive', False))
-        ol.addRow(self.interactive)
-
-        self.dual_res = QCheckBox('Dual-resonance extraction')
-        self.dual_res.setChecked(opts.get('dual_resonance', False))
-        ol.addRow(self.dual_res)
-
-        self.sep_ratio = QDoubleSpinBox()
-        self.sep_ratio.setRange(1.0, 10.0); self.sep_ratio.setValue(opts.get('separation_ratio', 2.0))
-        self.sep_ratio.setDecimals(1)
-        ol.addRow('Separation ratio:', self.sep_ratio)
-
-        self.min_shift = QDoubleSpinBox()
-        self.min_shift.setRange(0.01, 5.0); self.min_shift.setValue(opts.get('min_shift', 0.2))
-        self.min_shift.setDecimals(2)
-        ol.addRow('Min. freq. shift (Hz):', self.min_shift)
-
-        tabs.addTab(opt_tab, 'Options')
-
-        # ── Tab 3: Figure Defaults ───────────────────────────────────
-        fig_tab = QWidget()
-        fil = QFormLayout(fig_tab)
-        figs = cfg.get('figures', {})
-
-        self.fig_dpi = QSpinBox()
-        self.fig_dpi.setRange(72, 600); self.fig_dpi.setValue(figs.get('dpi', 300))
-        fil.addRow('DPI:', self.fig_dpi)
-
-        self.fig_font = QSpinBox()
-        self.fig_font.setRange(6, 24); self.fig_font.setValue(figs.get('font_size', 12))
-        fil.addRow('Font size:', self.fig_font)
-
-        self.fig_overlay = QCheckBox('Generate overlay figure')
-        self.fig_overlay.setChecked(figs.get('overlay', True))
-        fil.addRow(self.fig_overlay)
-
-        self.fig_waterfall = QCheckBox('Generate waterfall figure')
-        self.fig_waterfall.setChecked(figs.get('waterfall', True))
-        fil.addRow(self.fig_waterfall)
-
-        self.fig_pub = QCheckBox('Generate publication figure')
-        self.fig_pub.setChecked(figs.get('publication', True))
-        fil.addRow(self.fig_pub)
-
-        self.fig_peak_evo = QCheckBox('Generate peak evolution figure')
-        self.fig_peak_evo.setChecked(figs.get('peak_evolution', True))
-        fil.addRow(self.fig_peak_evo)
-
-        tabs.addTab(fig_tab, 'Figure Defaults')
-
-        # ── Tab 4: Peak Detection ────────────────────────────────────
-        pk_tab = QWidget()
-        pl = QFormLayout(pk_tab)
-        peak = cfg.get('peak', {})
-
-        self.pk_preset = QComboBox()
-        self.pk_preset.addItems(['default', 'forward_modeling', 'forward_modeling_sharp', 'conservative'])
-        self.pk_preset.setCurrentText(peak.get('preset', 'forward_modeling'))
-        pl.addRow('Preset:', self.pk_preset)
-
-        self.pk_method = QComboBox()
-        self.pk_method.addItems(['max', 'find_peaks', 'manual'])
-        self.pk_method.setCurrentText(peak.get('method', 'find_peaks'))
-        pl.addRow('Method:', self.pk_method)
-
-        self.pk_selection = QComboBox()
-        self.pk_selection.addItems(['leftmost', 'sharpest', 'leftmost_sharpest', 'max'])
-        self.pk_selection.setCurrentText(peak.get('selection', 'leftmost'))
-        pl.addRow('Selection:', self.pk_selection)
-
-        self.pk_prominence = QDoubleSpinBox()
-        self.pk_prominence.setRange(0.0, 5.0); self.pk_prominence.setValue(peak.get('min_prominence', 0.3))
-        self.pk_prominence.setDecimals(2)
-        pl.addRow('Min. prominence:', self.pk_prominence)
-
-        self.pk_distance = QSpinBox()
-        self.pk_distance.setRange(1, 100); self.pk_distance.setValue(peak.get('min_distance', 5))
-        pl.addRow('Min. distance:', self.pk_distance)
-
-        self.pk_clarity = QDoubleSpinBox()
-        self.pk_clarity.setRange(0.0, 5.0); self.pk_clarity.setValue(peak.get('clarity_threshold', 1.5))
-        self.pk_clarity.setDecimals(1)
-        pl.addRow('Clarity ratio:', self.pk_clarity)
-
-        tabs.addTab(pk_tab, 'Peak Detection')
-
-        layout.addWidget(tabs)
-
-        # ── Buttons ──────────────────────────────────────────────────
-        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults)
-        btns.accepted.connect(self.accept)
-        btns.rejected.connect(self.reject)
-        btns.button(QDialogButtonBox.RestoreDefaults).clicked.connect(self._restore_defaults)
-        layout.addWidget(btns)
-
-    def _restore_defaults(self):
-        self.fmin.setValue(0.3); self.fmax.setValue(40); self.nf.setValue(300)
-        self.adaptive.setChecked(True)
-        self.gen_report.setChecked(True); self.interactive.setChecked(False)
-        self.dual_res.setChecked(False)
-        self.sep_ratio.setValue(2.0); self.min_shift.setValue(0.2)
-        self.fig_dpi.setValue(300); self.fig_font.setValue(12)
-        self.fig_overlay.setChecked(True); self.fig_waterfall.setChecked(True)
-        self.fig_pub.setChecked(True); self.fig_peak_evo.setChecked(True)
-        self.pk_preset.setCurrentText('forward_modeling')
-        self.pk_method.setCurrentText('find_peaks')
-        self.pk_selection.setCurrentText('leftmost')
-        self.pk_prominence.setValue(0.3); self.pk_distance.setValue(5)
-        self.pk_clarity.setValue(1.5)
-
-    def get_config(self) -> dict:
+    def get_config(self):
         return {
-            'frequency': {
-                'fmin': self.fmin.value(), 'fmax': self.fmax.value(),
-                'nf': self.nf.value(), 'adaptive': self.adaptive.isChecked(),
+            "frequency": {
+                "fmin": self.fmin.value(),
+                "fmax": self.fmax.value(),
+                "nf": self.nf.value(),
+                "engine": self.engine_combo.currentText(),
             },
-            'options': {
-                'generate_report': self.gen_report.isChecked(),
-                'interactive': self.interactive.isChecked(),
-                'dual_resonance': self.dual_res.isChecked(),
-                'separation_ratio': self.sep_ratio.value(),
-                'min_shift': self.min_shift.value(),
+            "options": {
+                "generate_report": self.chk_report.isChecked(),
+                "dual_resonance": self.chk_dual.isChecked(),
             },
-            'figures': {
-                'dpi': self.fig_dpi.value(), 'font_size': self.fig_font.value(),
-                'overlay': self.fig_overlay.isChecked(),
-                'waterfall': self.fig_waterfall.isChecked(),
-                'publication': self.fig_pub.isChecked(),
-                'peak_evolution': self.fig_peak_evo.isChecked(),
+            "figure_defaults": {
+                "dpi": self.dpi.value(),
+                "width": self.fig_width.value(),
+                "height": self.fig_height.value(),
+                "font_size": self.font_size.value(),
+                "palette": self.palette_combo.currentText(),
+                "log_x": self.chk_log_x.isChecked(),
+                "log_y": self.chk_log_y.isChecked(),
+                "grid": self.chk_grid.isChecked(),
+                "save_png": self.chk_png.isChecked(),
+                "save_pdf": self.chk_pdf.isChecked(),
+                "save_svg": self.chk_svg.isChecked(),
             },
-            'peak': {
-                'preset': self.pk_preset.currentText(),
-                'method': self.pk_method.currentText(),
-                'selection': self.pk_selection.currentText(),
-                'min_prominence': self.pk_prominence.value(),
-                'min_distance': self.pk_distance.value(),
-                'clarity_threshold': self.pk_clarity.value(),
+            "peak_detection": {
+                "preset": self.peak_preset.currentText(),
+                "method": self.peak_method.currentText(),
+                "select": self.peak_select.currentText(),
             },
         }
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        tabs = QTabWidget()
+        layout.addWidget(tabs)
+
+        tabs.addTab(self._build_freq_tab(), "Frequency")
+        tabs.addTab(self._build_options_tab(), "Options")
+        tabs.addTab(self._build_figure_tab(), "Figure Defaults")
+        tabs.addTab(self._build_peak_tab(), "Peak Detection")
+
+        btn_row = QHBoxLayout()
+        btn_run = QPushButton("Run Batch")
+        btn_run.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 6px;")
+        btn_run.clicked.connect(self.accept)
+        btn_cancel = QPushButton("Cancel")
+        btn_cancel.clicked.connect(self.reject)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_run)
+        btn_row.addWidget(btn_cancel)
+        layout.addLayout(btn_row)
+
+    def _build_freq_tab(self):
+        w = QWidget()
+        form = QFormLayout(w)
+        self.fmin = QDoubleSpinBox(); self.fmin.setRange(0.01, 10); self.fmin.setValue(0.5)
+        self.fmax = QDoubleSpinBox(); self.fmax.setRange(1, 100); self.fmax.setValue(20.0)
+        self.nf = QSpinBox(); self.nf.setRange(50, 2000); self.nf.setValue(500)
+        self.engine_combo = QComboBox()
+        self.engine_combo.addItems(["diffuse_field", "sh_wave", "ellipticity"])
+        form.addRow("Freq Min (Hz):", self.fmin)
+        form.addRow("Freq Max (Hz):", self.fmax)
+        form.addRow("Points:", self.nf)
+        form.addRow("Engine:", self.engine_combo)
+        return w
+
+    def _build_options_tab(self):
+        w = QWidget()
+        form = QFormLayout(w)
+        self.chk_report = QCheckBox("Generate comprehensive report")
+        self.chk_report.setChecked(True)
+        self.chk_dual = QCheckBox("Run dual-resonance analysis")
+        form.addRow(self.chk_report)
+        form.addRow(self.chk_dual)
+        return w
+
+    def _build_figure_tab(self):
+        w = QWidget()
+        form = QFormLayout(w)
+        self.dpi = QSpinBox(); self.dpi.setRange(72, 600); self.dpi.setValue(150)
+        self.fig_width = QDoubleSpinBox(); self.fig_width.setRange(4, 20); self.fig_width.setValue(8)
+        self.fig_height = QDoubleSpinBox(); self.fig_height.setRange(3, 15); self.fig_height.setValue(6)
+        self.font_size = QSpinBox(); self.font_size.setRange(6, 24); self.font_size.setValue(12)
+        self.palette_combo = QComboBox()
+        self.palette_combo.addItems([
+            "tab10", "Set1", "Set2", "Dark2", "Pastel1", "viridis", "plasma",
+            "inferno", "magma", "cividis", "coolwarm", "Spectral"])
+        form.addRow("DPI:", self.dpi)
+        form.addRow("Width (in):", self.fig_width)
+        form.addRow("Height (in):", self.fig_height)
+        form.addRow("Font Size:", self.font_size)
+        form.addRow("Palette:", self.palette_combo)
+
+        self.chk_log_x = QCheckBox("Log X"); self.chk_log_x.setChecked(True)
+        self.chk_log_y = QCheckBox("Log Y")
+        self.chk_grid = QCheckBox("Grid"); self.chk_grid.setChecked(True)
+        form.addRow(self.chk_log_x)
+        form.addRow(self.chk_log_y)
+        form.addRow(self.chk_grid)
+
+        form.addRow(QLabel("Save formats:"))
+        self.chk_png = QCheckBox("PNG"); self.chk_png.setChecked(True)
+        self.chk_pdf = QCheckBox("PDF"); self.chk_pdf.setChecked(True)
+        self.chk_svg = QCheckBox("SVG")
+        form.addRow(self.chk_png)
+        form.addRow(self.chk_pdf)
+        form.addRow(self.chk_svg)
+        return w
+
+    def _build_peak_tab(self):
+        w = QWidget()
+        form = QFormLayout(w)
+        self.peak_preset = QComboBox()
+        self.peak_preset.addItems(["default", "forward_modeling", "forward_modeling_sharp", "conservative", "custom"])
+        self.peak_method = QComboBox()
+        self.peak_method.addItems(["find_peaks", "max", "manual"])
+        self.peak_select = QComboBox()
+        self.peak_select.addItems(["leftmost", "max", "sharpest", "leftmost_sharpest"])
+        form.addRow("Preset:", self.peak_preset)
+        form.addRow("Method:", self.peak_method)
+        form.addRow("Selection:", self.peak_select)
+        return w
+
+    def _load_config(self, cfg):
+        freq = cfg.get("frequency", {})
+        if "fmin" in freq: self.fmin.setValue(freq["fmin"])
+        if "fmax" in freq: self.fmax.setValue(freq["fmax"])
+        if "nf" in freq: self.nf.setValue(freq["nf"])
