@@ -79,6 +79,7 @@ class AllProfilesView(QWidget):
         self._picking_mode = None  # None, "f0", or "secondary"
         self._drag_start = None          # (freq, amp) during drag
         self._drag_temp_marker = None    # temporary Line2D marker
+        self._output_dir = ""            # default output dir from panel
         self._build_ui()
 
     def _build_ui(self):
@@ -427,6 +428,10 @@ class AllProfilesView(QWidget):
         self._redraw()
         if self._chk_vs.isChecked():
             self._redraw_vs()
+
+    def set_output_dir(self, path):
+        """Store default output directory (from the Multiple tab panel)."""
+        self._output_dir = path
 
     def update_peak_data(self, peak_data):
         """Update peak selections (e.g. from wizard) and redraw."""
@@ -864,9 +869,14 @@ class AllProfilesView(QWidget):
         """Save only All Profiles outputs (combined figures, median, tables)."""
         if not self._results:
             return
-        folder = QFileDialog.getExistingDirectory(self, "Save All Profiles Output To")
+
+        # Use stored output dir from panel (no dialog)
+        folder = self._output_dir
         if not folder:
-            return
+            folder = QFileDialog.getExistingDirectory(
+                self, "Save All Profiles Output To")
+            if not folder:
+                return
 
         from pathlib import Path
         import matplotlib.pyplot as plt
@@ -905,70 +915,110 @@ class AllProfilesView(QWidget):
             self._mw.log(f"All Profiles output saved to {out_dir}")
 
     def _save_all_results(self):
-        """Full re-save: per-profile figures + All Profiles outputs."""
+        """Open Save Options dialog for full control over what to save."""
         if not self._results:
             return
-        folder = QFileDialog.getExistingDirectory(self, "Save All Results To")
-        if not folder:
+        from ..dialogs.save_options_dialog import SaveOptionsDialog
+        dlg = SaveOptionsDialog(
+            default_dir=self._output_dir,
+            default_dpi=self._dpi.value(),
+            default_fmt=self._export_fmt.currentText(),
+            parent=self,
+        )
+        if dlg.exec_() != dlg.Accepted:
             return
 
+        opts = dlg.get_options()
         from pathlib import Path
         import matplotlib.pyplot as plt
-        base = Path(folder)
+        base = Path(opts["output_dir"])
         base.mkdir(parents=True, exist_ok=True)
-
-        dpi = self._dpi.value()
-        fmt = self._export_fmt.currentText().lower()
+        dpi = opts["dpi"]
+        fmt = opts["format"].lower()
         fig_key = self._fig_size.currentText()
         figsize = FIGURE_SIZES.get(fig_key, (12, 8))
         computed = [r for r in self._results if r.computed]
 
+        # Per-profile re-save if requested
+        if opts.get("resave_profiles"):
+            for r in computed:
+                prof_dir = base / r.name
+                prof_dir.mkdir(exist_ok=True)
+                if r.freqs is not None:
+                    with open(prof_dir / "hv_curve.csv", "w") as f:
+                        f.write("frequency,amplitude\n")
+                        for freq, amp in zip(r.freqs, r.amps):
+                            f.write(f"{freq},{amp}\n")
+                pk = self._peak_data.get(r.name, {})
+                f0 = pk.get("f0") or r.f0
+                if f0:
+                    with open(prof_dir / "peak_info.txt", "w") as f:
+                        f.write(f"f0_Frequency_Hz,{f0[0]:.6f}\n")
+                        f.write(f"f0_Amplitude,{f0[1]:.6f}\n")
+                        f.write(f"f0_Index,{f0[2]}\n")
+                        for j, s in enumerate(pk.get("secondary", [])):
+                            f.write(f"Secondary_{j+1}_Frequency_Hz,{s[0]:.6f}\n")
+                            f.write(f"Secondary_{j+1}_Amplitude,{s[1]:.6f}\n")
+                            f.write(f"Secondary_{j+1}_Index,{s[2]}\n")
+
+        if opts.get("resave_hv_figures"):
+            for r in computed:
+                prof_dir = base / r.name
+                prof_dir.mkdir(exist_ok=True)
+                pk = self._peak_data.get(r.name, {})
+                self._save_profile_figure(r, pk, prof_dir, figsize, dpi, fmt)
+
+        if opts.get("resave_vs_figures"):
+            for r in computed:
+                if r.profile:
+                    prof_dir = base / r.name
+                    prof_dir.mkdir(exist_ok=True)
+                    try:
+                        self._save_vs_figure(r, prof_dir, dpi)
+                    except Exception:
+                        pass
+                    self._save_vs_info(r, prof_dir)
+
+        # All-profile outputs
+        out_dir = base / "all_profile_output"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        if opts.get("combined_overlay"):
+            self._save_combined(out_dir, computed, figsize, dpi, fmt)
+
+        if opts.get("paper_hv_vs"):
+            self._save_paper_figures(out_dir, computed, figsize, dpi, fmt)
+
+        if opts.get("normalized_hv"):
+            self._save_normalized_hv(out_dir, computed, figsize, dpi, fmt)
+
+        if opts.get("f0_histogram"):
+            self._save_f0_histogram(out_dir, computed, dpi, fmt)
+
+        if opts.get("f0_vs_vs30"):
+            self._save_f0_vs_vs30(out_dir, computed, dpi, fmt)
+
+        if opts.get("spectral_matrix"):
+            self._save_spectral_matrix(out_dir, computed, dpi, fmt)
+
+        # Update peak_info.txt per profile if peaks changed
         for r in computed:
-            prof_dir = base / r.name
-            prof_dir.mkdir(exist_ok=True)
-
-            # hv_curve.csv
-            if r.freqs is not None:
-                with open(prof_dir / "hv_curve.csv", "w") as f:
-                    f.write("frequency,amplitude\n")
-                    for freq, amp in zip(r.freqs, r.amps):
-                        f.write(f"{freq},{amp}\n")
-
-            # peak_info.txt
             pk = self._peak_data.get(r.name, {})
             f0 = pk.get("f0") or r.f0
             if f0:
-                with open(prof_dir / "peak_info.txt", "w") as f:
-                    f.write(f"f0_Frequency_Hz,{f0[0]:.6f}\n")
-                    f.write(f"f0_Amplitude,{f0[1]:.6f}\n")
-                    f.write(f"f0_Index,{f0[2]}\n")
-                    for j, s in enumerate(pk.get("secondary", [])):
-                        f.write(f"Secondary_{j+1}_Frequency_Hz,{s[0]:.6f}\n")
-                        f.write(f"Secondary_{j+1}_Amplitude,{s[1]:.6f}\n")
-                        f.write(f"Secondary_{j+1}_Index,{s[2]}\n")
-
-            # hv_forward_curve figure
-            self._save_profile_figure(r, pk, prof_dir, figsize, dpi, fmt)
-
-            # Vs profile figure
-            if r.profile:
-                try:
-                    self._save_vs_figure(r, prof_dir, dpi)
-                except Exception:
-                    pass
-
-            # Vs30/VsAvg info
-            if r.profile:
-                self._save_vs_info(r, prof_dir)
-
-        # Combined outputs
-        out_dir = base / "all_profile_output"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        self._save_combined(out_dir, computed, figsize, dpi, fmt)
-        self._save_paper_figures(out_dir, computed, figsize, dpi, fmt)
+                prof_dir = base / r.name
+                if prof_dir.exists():
+                    with open(prof_dir / "peak_info.txt", "w") as f:
+                        f.write(f"f0_Frequency_Hz,{f0[0]:.6f}\n")
+                        f.write(f"f0_Amplitude,{f0[1]:.6f}\n")
+                        f.write(f"f0_Index,{f0[2]}\n")
+                        for j, s in enumerate(pk.get("secondary", [])):
+                            f.write(f"Secondary_{j+1}_Frequency_Hz,{s[0]:.6f}\n")
+                            f.write(f"Secondary_{j+1}_Amplitude,{s[1]:.6f}\n")
+                            f.write(f"Secondary_{j+1}_Index,{s[2]}\n")
 
         if self._mw:
-            self._mw.log(f"Full results saved to {folder}")
+            self._mw.log(f"Results saved to {base}")
 
     def _save_profile_figure(self, r, pk, prof_dir, figsize, dpi, fmt):
         """Save individual HV figure matching old package quality."""
@@ -1409,6 +1459,163 @@ class AllProfilesView(QWidget):
                     fig.savefig(out_dir / "publication_vs_comparison.pdf",
                                 dpi=dpi)
                 plt.close(fig)
+        except Exception:
+            pass
+
+    def _save_normalized_hv(self, out_dir, computed, figsize, dpi, fmt):
+        """Save normalized HV comparison — all curves scaled to peak=1."""
+        import matplotlib.pyplot as plt
+        from matplotlib.figure import Figure
+
+        if not computed:
+            return
+        try:
+            n = len(computed)
+            colors = self._get_colors(n)
+            fig = Figure(figsize=figsize)
+            ax = fig.add_subplot(111)
+            for i, r in enumerate(computed):
+                if r.freqs is None:
+                    continue
+                peak = np.max(r.amps) if np.max(r.amps) > 0 else 1.0
+                ax.plot(r.freqs, r.amps / peak, color=colors[i % n],
+                        lw=0.8, alpha=0.5, label=r.name)
+
+            med_f, med_a, _ = self._compute_stats()
+            if med_f is not None and np.max(med_a) > 0:
+                ax.plot(med_f, med_a / np.max(med_a), color="black",
+                        lw=2.5, label="Median", zorder=10)
+
+            ax.set_xscale("log")
+            ax.set_xlabel("Frequency (Hz)", fontsize=12)
+            ax.set_ylabel("Normalized H/V (peak = 1)", fontsize=12)
+            ax.set_title("Normalized H/V Comparison", fontsize=14,
+                          fontweight="bold")
+            ax.grid(True, alpha=0.3, which="both")
+            ax.legend(fontsize=6, loc="upper right", ncol=2, framealpha=0.9)
+            fig.tight_layout()
+            fig.savefig(out_dir / f"publication_normalized_hv.{fmt}", dpi=dpi)
+            if fmt != "pdf":
+                fig.savefig(out_dir / "publication_normalized_hv.pdf", dpi=dpi)
+            plt.close(fig)
+        except Exception:
+            pass
+
+    def _save_f0_histogram(self, out_dir, computed, dpi, fmt):
+        """Save f0 frequency distribution histogram across profiles."""
+        import matplotlib.pyplot as plt
+        from matplotlib.figure import Figure
+
+        f0_vals = []
+        for r in computed:
+            pk = self._peak_data.get(r.name, {})
+            f0 = pk.get("f0") or r.f0
+            if f0:
+                f0_vals.append(f0[0])
+        if len(f0_vals) < 2:
+            return
+        try:
+            fig = Figure(figsize=(8, 6))
+            ax = fig.add_subplot(111)
+            n_bins = min(max(len(f0_vals) // 2, 5), 20)
+            ax.hist(f0_vals, bins=n_bins, color="steelblue", edgecolor="black",
+                    alpha=0.8)
+            ax.axvline(np.median(f0_vals), color="red", lw=2, ls="--",
+                       label=f"Median = {np.median(f0_vals):.3f} Hz")
+            ax.axvline(np.mean(f0_vals), color="orange", lw=2, ls=":",
+                       label=f"Mean = {np.mean(f0_vals):.3f} Hz")
+            ax.set_xlabel("Fundamental Frequency f0 (Hz)", fontsize=12)
+            ax.set_ylabel("Count", fontsize=12)
+            ax.set_title("f0 Distribution Across Profiles", fontsize=14,
+                          fontweight="bold")
+            ax.legend(fontsize=10, framealpha=0.9)
+            ax.grid(True, alpha=0.3, axis="y")
+            fig.tight_layout()
+            fig.savefig(out_dir / f"publication_f0_histogram.{fmt}", dpi=dpi)
+            if fmt != "pdf":
+                fig.savefig(out_dir / "publication_f0_histogram.pdf", dpi=dpi)
+            plt.close(fig)
+        except Exception:
+            pass
+
+    def _save_f0_vs_vs30(self, out_dir, computed, dpi, fmt):
+        """Save f0 vs Vs30 scatter plot for site characterisation."""
+        import matplotlib.pyplot as plt
+        from matplotlib.figure import Figure
+
+        pairs = []
+        for r in computed:
+            pk = self._peak_data.get(r.name, {})
+            f0 = pk.get("f0") or r.f0
+            if f0 and r.profile:
+                try:
+                    from hvstrip_progressive.core.vs_average import vs_average_from_profile
+                    res30 = vs_average_from_profile(r.profile, target_depth=30.0)
+                    pairs.append((f0[0], res30.vs_avg, r.name))
+                except Exception:
+                    pass
+        if len(pairs) < 2:
+            return
+        try:
+            fig = Figure(figsize=(8, 6))
+            ax = fig.add_subplot(111)
+            freqs = [p[0] for p in pairs]
+            vs30s = [p[1] for p in pairs]
+            ax.scatter(freqs, vs30s, s=80, c="steelblue", edgecolors="black",
+                       zorder=5, alpha=0.8)
+            for f, v, name in pairs:
+                ax.annotate(name, (f, v), textcoords="offset points",
+                            xytext=(5, 5), fontsize=7, alpha=0.7)
+            ax.set_xlabel("Fundamental Frequency f0 (Hz)", fontsize=12)
+            ax.set_ylabel("Vs30 (m/s)", fontsize=12)
+            ax.set_title("f0 vs Vs30", fontsize=14, fontweight="bold")
+            ax.grid(True, alpha=0.3)
+            fig.tight_layout()
+            fig.savefig(out_dir / f"publication_f0_vs_vs30.{fmt}", dpi=dpi)
+            if fmt != "pdf":
+                fig.savefig(out_dir / "publication_f0_vs_vs30.pdf", dpi=dpi)
+            plt.close(fig)
+        except Exception:
+            pass
+
+    def _save_spectral_matrix(self, out_dir, computed, dpi, fmt):
+        """Save spectral ratio matrix — small multiples grid of individual HV curves."""
+        import matplotlib.pyplot as plt
+        from matplotlib.figure import Figure
+        import math
+
+        n = len(computed)
+        if n < 1:
+            return
+        try:
+            ncols = min(4, n)
+            nrows = math.ceil(n / ncols)
+            fig = Figure(figsize=(4 * ncols, 3 * nrows))
+
+            for i, r in enumerate(computed):
+                ax = fig.add_subplot(nrows, ncols, i + 1)
+                if r.freqs is not None:
+                    ax.plot(r.freqs, r.amps, color="steelblue", lw=1.2)
+                    pk = self._peak_data.get(r.name, {})
+                    f0 = pk.get("f0") or r.f0
+                    if f0:
+                        ax.axvline(f0[0], color="red", lw=0.8, ls="--",
+                                   alpha=0.6)
+                        ax.plot(f0[0], f0[1], "rv", ms=8, zorder=5)
+                ax.set_xscale("log")
+                ax.set_title(r.name, fontsize=9, fontweight="bold")
+                ax.grid(True, alpha=0.2, which="both")
+                ax.tick_params(labelsize=7)
+                if i % ncols == 0:
+                    ax.set_ylabel("H/V", fontsize=8)
+                if i >= n - ncols:
+                    ax.set_xlabel("Freq (Hz)", fontsize=8)
+
+            fig.tight_layout()
+            fig.savefig(out_dir / f"publication_spectral_matrix.{fmt}", dpi=dpi)
+            if fmt != "pdf":
+                fig.savefig(out_dir / "publication_spectral_matrix.pdf", dpi=dpi)
+            plt.close(fig)
         except Exception:
             pass
 

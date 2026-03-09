@@ -19,8 +19,17 @@ from PyQt5.QtWidgets import (
 
 from ..workers.workflow_worker import WorkflowWorker
 from ..workers.batch_worker import BatchWorker
+from ..widgets.style_constants import (
+    OUTER_MARGINS, SECONDARY_LABEL, MONOSPACE_PREVIEW,
+    BUTTON_PRIMARY, BUTTON_SUCCESS, BUTTON_DANGER, GEAR_BUTTON, EMOJI,
+)
 
 ENGINES = ["diffuse_field", "sh_wave", "ellipticity"]
+ENGINE_DESCRIPTIONS = {
+    "diffuse_field": "Full diffuse wavefield H/V ratio (HVf.exe required)",
+    "sh_wave": "SH-wave transfer function (pure Python, no external tools)",
+    "ellipticity": "Rayleigh wave ellipticity (gpell.exe required)",
+}
 
 
 class HomePage(QWidget):
@@ -42,12 +51,14 @@ class HomePage(QWidget):
     # ═══════════════════════════════════════════════════════════
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setContentsMargins(*OUTER_MARGINS)
 
-        hdr = QLabel("<b>HVSR Progressive Layer Stripping Analysis</b>")
+        hdr = QLabel(f"<b>{EMOJI['home']} HVSR Progressive Layer Stripping Analysis</b>")
         hdr.setStyleSheet("font-size: 14px; padding: 4px;")
         layout.addWidget(hdr)
-        layout.addWidget(QLabel("Run complete analysis workflow on single or multiple soil profiles"))
+        desc = QLabel("Run complete analysis workflow on single or multiple soil profiles")
+        desc.setStyleSheet(SECONDARY_LABEL)
+        layout.addWidget(desc)
 
         self._tabs = QTabWidget()
         self._tabs.addTab(self._build_single_tab(), "Single Profile")
@@ -62,7 +73,7 @@ class HomePage(QWidget):
         layout = QVBoxLayout(w)
 
         # Input Source
-        src_grp = QGroupBox("Input Source")
+        src_grp = QGroupBox(f"{EMOJI['file']} Input Source")
         src_layout = QVBoxLayout(src_grp)
         self._src_group = QButtonGroup()
         self._rb_hvf = QRadioButton("HVf File")
@@ -114,7 +125,7 @@ class HomePage(QWidget):
         layout.addWidget(src_grp)
 
         # Output Directory
-        out_grp = QGroupBox("Output Directory")
+        out_grp = QGroupBox(f"{EMOJI['folder']} Output Directory")
         out_layout = QHBoxLayout(out_grp)
         self._output_edit = QLineEdit()
         out_layout.addWidget(self._output_edit)
@@ -124,11 +135,11 @@ class HomePage(QWidget):
         layout.addWidget(out_grp)
 
         # Configuration
-        cfg_grp = QGroupBox("Configuration")
+        cfg_grp = QGroupBox(f"{EMOJI['config']} Configuration")
         cfg_form = QFormLayout(cfg_grp)
-        self._fmin = QDoubleSpinBox(); self._fmin.setRange(0.01, 10); self._fmin.setValue(0.5)
+        self._fmin = QDoubleSpinBox(); self._fmin.setRange(0.01, 10); self._fmin.setValue(0.2)
         self._fmax = QDoubleSpinBox(); self._fmax.setRange(1, 100); self._fmax.setValue(20.0)
-        self._nf = QSpinBox(); self._nf.setRange(50, 2000); self._nf.setValue(500)
+        self._nf = QSpinBox(); self._nf.setRange(10, 2000); self._nf.setValue(71)
         cfg_form.addRow("Freq Min (Hz):", self._fmin)
         cfg_form.addRow("Freq Max (Hz):", self._fmax)
         cfg_form.addRow("Points:", self._nf)
@@ -136,16 +147,23 @@ class HomePage(QWidget):
         engine_row = QHBoxLayout()
         self._engine_combo = QComboBox()
         self._engine_combo.addItems(ENGINES)
+        self._engine_combo.currentTextChanged.connect(self._on_engine_changed)
         engine_row.addWidget(self._engine_combo)
         self._gear_btn = QPushButton("⚙")
         self._gear_btn.setFixedWidth(30)
+        self._gear_btn.setStyleSheet(GEAR_BUTTON)
+        self._gear_btn.setToolTip("Configure engine settings")
         self._gear_btn.clicked.connect(self._open_engine_settings)
         engine_row.addWidget(self._gear_btn)
         cfg_form.addRow("Engine:", engine_row)
+        self._engine_desc = QLabel(ENGINE_DESCRIPTIONS.get("diffuse_field", ""))
+        self._engine_desc.setStyleSheet(SECONDARY_LABEL)
+        self._engine_desc.setWordWrap(True)
+        cfg_form.addRow("", self._engine_desc)
         layout.addWidget(cfg_grp)
 
         # Options
-        opt_grp = QGroupBox("Options")
+        opt_grp = QGroupBox(f"{EMOJI['config']} Options")
         opt_layout = QVBoxLayout(opt_grp)
         self._chk_report = QCheckBox("Generate comprehensive report")
         self._chk_report.setChecked(True)
@@ -161,6 +179,7 @@ class HomePage(QWidget):
         dr_row.addWidget(self._chk_dual)
         self._dr_gear = QPushButton("⚙")
         self._dr_gear.setFixedWidth(30)
+        self._dr_gear.setStyleSheet(GEAR_BUTTON)
         self._dr_gear.clicked.connect(self._open_dr_settings)
         dr_row.addWidget(self._dr_gear)
         dr_row.addStretch()
@@ -169,11 +188,11 @@ class HomePage(QWidget):
 
         # Control
         ctrl = QHBoxLayout()
-        self._btn_run = QPushButton("Run Analysis")
-        self._btn_run.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 8px;")
+        self._btn_run = QPushButton(f"{EMOJI['run']} Run Analysis")
+        self._btn_run.setStyleSheet(BUTTON_PRIMARY)
         self._btn_run.clicked.connect(self._run_single)
         ctrl.addWidget(self._btn_run)
-        self._btn_cancel = QPushButton("Cancel")
+        self._btn_cancel = QPushButton(f"{EMOJI['stop']} Cancel")
         self._btn_cancel.setEnabled(False)
         self._btn_cancel.clicked.connect(self._cancel)
         ctrl.addWidget(self._btn_cancel)
@@ -187,6 +206,7 @@ class HomePage(QWidget):
         self._output_text = QTextEdit()
         self._output_text.setReadOnly(True)
         self._output_text.setMaximumHeight(200)
+        self._output_text.setStyleSheet(MONOSPACE_PREVIEW)
         layout.addWidget(self._output_text)
 
         layout.addStretch()
@@ -201,7 +221,7 @@ class HomePage(QWidget):
         layout = QVBoxLayout(w)
 
         # Input files
-        inp_grp = QGroupBox("Input Profiles")
+        inp_grp = QGroupBox(f"{EMOJI['file']} Input Profiles")
         inp_layout = QVBoxLayout(inp_grp)
         btn_row = QHBoxLayout()
         btn_add = QPushButton("Add Files...")
@@ -220,7 +240,7 @@ class HomePage(QWidget):
         layout.addWidget(inp_grp)
 
         # Batch output directory
-        bout_grp = QGroupBox("Output Directory")
+        bout_grp = QGroupBox(f"{EMOJI['folder']} Output Directory")
         bout_layout = QHBoxLayout(bout_grp)
         self._batch_output_edit = QLineEdit()
         bout_layout.addWidget(self._batch_output_edit)
@@ -230,11 +250,11 @@ class HomePage(QWidget):
         layout.addWidget(bout_grp)
 
         # Batch configuration
-        bcfg_grp = QGroupBox("Configuration")
+        bcfg_grp = QGroupBox(f"{EMOJI['config']} Configuration")
         bcfg_form = QFormLayout(bcfg_grp)
-        self._batch_fmin = QDoubleSpinBox(); self._batch_fmin.setRange(0.01, 10); self._batch_fmin.setValue(0.5)
+        self._batch_fmin = QDoubleSpinBox(); self._batch_fmin.setRange(0.01, 10); self._batch_fmin.setValue(0.2)
         self._batch_fmax = QDoubleSpinBox(); self._batch_fmax.setRange(1, 100); self._batch_fmax.setValue(20.0)
-        self._batch_nf = QSpinBox(); self._batch_nf.setRange(50, 2000); self._batch_nf.setValue(500)
+        self._batch_nf = QSpinBox(); self._batch_nf.setRange(10, 2000); self._batch_nf.setValue(71)
         bcfg_form.addRow("Freq Min (Hz):", self._batch_fmin)
         bcfg_form.addRow("Freq Max (Hz):", self._batch_fmax)
         bcfg_form.addRow("Points:", self._batch_nf)
@@ -245,13 +265,14 @@ class HomePage(QWidget):
         bengine_row.addWidget(self._batch_engine)
         bgear = QPushButton("⚙")
         bgear.setFixedWidth(30)
+        bgear.setStyleSheet(GEAR_BUTTON)
         bgear.clicked.connect(self._open_engine_settings)
         bengine_row.addWidget(bgear)
         bcfg_form.addRow("Engine:", bengine_row)
         layout.addWidget(bcfg_grp)
 
         # Batch options
-        bopt_grp = QGroupBox("Options")
+        bopt_grp = QGroupBox(f"{EMOJI['config']} Options")
         bopt_layout = QVBoxLayout(bopt_grp)
         self._batch_chk_report = QCheckBox("Generate comprehensive report for each profile")
         self._batch_chk_report.setChecked(True)
@@ -261,6 +282,7 @@ class HomePage(QWidget):
         bdr_row.addWidget(self._batch_chk_dual)
         bdr_gear = QPushButton("⚙")
         bdr_gear.setFixedWidth(30)
+        bdr_gear.setStyleSheet(GEAR_BUTTON)
         bdr_gear.clicked.connect(self._open_dr_settings)
         bdr_row.addWidget(bdr_gear)
         bdr_row.addStretch()
@@ -268,8 +290,8 @@ class HomePage(QWidget):
         layout.addWidget(bopt_grp)
 
         # Run batch
-        self._btn_batch_run = QPushButton("Run Batch Analysis")
-        self._btn_batch_run.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 8px;")
+        self._btn_batch_run = QPushButton(f"{EMOJI['run']} Run Batch Analysis")
+        self._btn_batch_run.setStyleSheet(BUTTON_SUCCESS)
         self._btn_batch_run.clicked.connect(self._run_batch)
         layout.addWidget(self._btn_batch_run)
 
@@ -281,6 +303,7 @@ class HomePage(QWidget):
         self._batch_output_text = QTextEdit()
         self._batch_output_text.setReadOnly(True)
         self._batch_output_text.setMaximumHeight(200)
+        self._batch_output_text.setStyleSheet(MONOSPACE_PREVIEW)
         layout.addWidget(self._batch_output_text)
 
         layout.addStretch()
@@ -481,6 +504,11 @@ class HomePage(QWidget):
         is_hvf = self._rb_hvf.isChecked()
         self._hvf_widget.setVisible(is_hvf)
         self._dinver_widget.setVisible(not is_hvf)
+
+    def _on_engine_changed(self, engine_name):
+        desc = ENGINE_DESCRIPTIONS.get(engine_name, "")
+        if hasattr(self, '_engine_desc'):
+            self._engine_desc.setText(desc)
 
     def _browse_model(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select Model File", "", "Model Files (*.txt);;All (*)")

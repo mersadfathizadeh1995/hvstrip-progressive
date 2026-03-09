@@ -16,6 +16,9 @@ from PyQt5.QtWidgets import (
 )
 
 from ..widgets.plot_widget import MatplotlibWidget
+from ..widgets.style_constants import (
+    OUTER_MARGINS, SECONDARY_LABEL, BUTTON_PRIMARY, EMOJI,
+)
 
 
 class VisualizationPage(QWidget):
@@ -31,7 +34,7 @@ class VisualizationPage(QWidget):
 
     def _build_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setContentsMargins(*OUTER_MARGINS)
         splitter = QSplitter(Qt.Horizontal)
         layout.addWidget(splitter)
 
@@ -43,7 +46,7 @@ class VisualizationPage(QWidget):
         left_layout = QVBoxLayout(left_w)
 
         # Data Sources
-        ds_grp = QGroupBox("Data Sources")
+        ds_grp = QGroupBox(f"{EMOJI['file']} Data Sources")
         ds_form = QFormLayout(ds_grp)
         self._hv_csv_edit = QLineEdit(); self._hv_csv_edit.setPlaceholderText("HV curve CSV file")
         btn_hv = QPushButton("...")
@@ -67,13 +70,13 @@ class VisualizationPage(QWidget):
         ds_form.addRow("Results Dir:", r3)
         left_layout.addWidget(ds_grp)
 
-        btn_load = QPushButton("Load Data")
-        btn_load.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 6px;")
+        btn_load = QPushButton(f"{EMOJI['run']} Load Data")
+        btn_load.setStyleSheet(BUTTON_PRIMARY)
         btn_load.clicked.connect(self._load_data)
         left_layout.addWidget(btn_load)
 
         # Figure Style
-        style_grp = QGroupBox("Figure Style")
+        style_grp = QGroupBox(f"{EMOJI['chart']} Figure Style")
         style_form = QFormLayout(style_grp)
         self._dpi = QSpinBox(); self._dpi.setRange(72, 600); self._dpi.setValue(150)
         self._fig_width = QDoubleSpinBox(); self._fig_width.setRange(4, 24); self._fig_width.setValue(10)
@@ -112,11 +115,11 @@ class VisualizationPage(QWidget):
         left_layout.addWidget(style_grp)
 
         # Axis Settings
-        axis_grp = QGroupBox("Axis Settings")
+        axis_grp = QGroupBox(f"{EMOJI['frequency']} Axis Settings")
         axis_form = QFormLayout(axis_grp)
         self._x_scale = QComboBox(); self._x_scale.addItems(["log", "linear"]); self._x_scale.setCurrentIndex(0)
         self._y_scale = QComboBox(); self._y_scale.addItems(["linear", "log"]); self._y_scale.setCurrentIndex(0)
-        self._freq_min = QDoubleSpinBox(); self._freq_min.setRange(0.01, 10); self._freq_min.setValue(0.5)
+        self._freq_min = QDoubleSpinBox(); self._freq_min.setRange(0.01, 10); self._freq_min.setValue(0.2)
         self._freq_max = QDoubleSpinBox(); self._freq_max.setRange(1, 100); self._freq_max.setValue(20.0)
         axis_form.addRow("X Scale:", self._x_scale)
         axis_form.addRow("Y Scale:", self._y_scale)
@@ -125,7 +128,7 @@ class VisualizationPage(QWidget):
         left_layout.addWidget(axis_grp)
 
         # Export
-        export_grp = QGroupBox("Export")
+        export_grp = QGroupBox(f"{EMOJI['save']} Export")
         export_layout = QVBoxLayout(export_grp)
         self._export_fmt = QComboBox()
         self._export_fmt.addItems(["PNG", "PDF", "SVG", "EPS"])
@@ -174,6 +177,8 @@ class VisualizationPage(QWidget):
 
         splitter.addWidget(right_w)
         splitter.setSizes([350, 650])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
 
     # ═══════════════════════════════════════════════════════════
     #  DATA LOADING

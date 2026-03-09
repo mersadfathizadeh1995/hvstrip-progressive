@@ -20,6 +20,10 @@ from PyQt5.QtWidgets import (
     QMessageBox,
 )
 
+from ..widgets.style_constants import (
+    OUTER_MARGINS, SECONDARY_LABEL, BUTTON_SUCCESS, EMOJI,
+)
+
 ENGINES = ["diffuse_field", "sh_wave", "ellipticity"]
 PEAK_PRESETS = ["default", "forward_modeling", "forward_modeling_sharp", "conservative", "custom"]
 PEAK_METHODS = ["find_peaks", "max", "manual"]
@@ -38,12 +42,14 @@ class SettingsPage(QWidget):
 
     def _build_ui(self):
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(4, 4, 4, 4)
+        outer.setContentsMargins(*OUTER_MARGINS)
 
-        hdr = QLabel("<b>Global Settings</b>")
+        hdr = QLabel(f"<b>{EMOJI['settings']} Global Settings</b>")
         hdr.setStyleSheet("font-size: 14px; padding: 4px;")
         outer.addWidget(hdr)
-        outer.addWidget(QLabel("Configure application-wide defaults. Changes apply to all pages."))
+        desc = QLabel("Configure application-wide defaults. Changes apply to all pages.")
+        desc.setStyleSheet(SECONDARY_LABEL)
+        outer.addWidget(desc)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -51,7 +57,7 @@ class SettingsPage(QWidget):
         layout = QVBoxLayout(sw)
 
         # 1 — Engine Selection
-        eng_grp = QGroupBox("Engine Selection")
+        eng_grp = QGroupBox(f"{EMOJI['engine']} Engine Selection")
         eng_form = QFormLayout(eng_grp)
         self._engine_combo = QComboBox()
         self._engine_combo.addItems(ENGINES)
@@ -62,7 +68,7 @@ class SettingsPage(QWidget):
         layout.addWidget(eng_grp)
 
         # 2 — HVf Path
-        hvf_grp = QGroupBox("HVf Executable")
+        hvf_grp = QGroupBox(f"{EMOJI['file']} HVf Executable")
         hvf_layout = QHBoxLayout(hvf_grp)
         self._hvf_path = QLineEdit()
         self._hvf_path.setPlaceholderText("Auto-detect from bin/exe_Win/HVf.exe")
@@ -73,18 +79,18 @@ class SettingsPage(QWidget):
         layout.addWidget(hvf_grp)
 
         # 3 — Frequency Range
-        freq_grp = QGroupBox("Default Frequency Range")
+        freq_grp = QGroupBox(f"{EMOJI['frequency']} Default Frequency Range")
         freq_form = QFormLayout(freq_grp)
-        self._fmin = QDoubleSpinBox(); self._fmin.setRange(0.01, 10); self._fmin.setValue(0.5)
+        self._fmin = QDoubleSpinBox(); self._fmin.setRange(0.01, 10); self._fmin.setValue(0.2)
         self._fmax = QDoubleSpinBox(); self._fmax.setRange(1, 100); self._fmax.setValue(20.0)
-        self._nf = QSpinBox(); self._nf.setRange(50, 2000); self._nf.setValue(500)
+        self._nf = QSpinBox(); self._nf.setRange(10, 2000); self._nf.setValue(71)
         freq_form.addRow("Freq Min (Hz):", self._fmin)
         freq_form.addRow("Freq Max (Hz):", self._fmax)
         freq_form.addRow("Points:", self._nf)
         layout.addWidget(freq_grp)
 
         # 4 — Plot Settings
-        plot_grp = QGroupBox("Plot Settings")
+        plot_grp = QGroupBox(f"{EMOJI['chart']} Plot Settings")
         plot_form = QFormLayout(plot_grp)
         self._dpi = QSpinBox(); self._dpi.setRange(72, 600); self._dpi.setValue(150)
         self._x_scale = QComboBox(); self._x_scale.addItems(["log", "linear"])
@@ -97,7 +103,7 @@ class SettingsPage(QWidget):
         layout.addWidget(plot_grp)
 
         # 5 — Peak Detection
-        peak_grp = QGroupBox("Peak Detection")
+        peak_grp = QGroupBox(f"{EMOJI['peak']} Peak Detection")
         peak_form = QFormLayout(peak_grp)
         self._peak_preset = QComboBox(); self._peak_preset.addItems(PEAK_PRESETS)
         self._peak_method = QComboBox(); self._peak_method.addItems(PEAK_METHODS)
@@ -108,7 +114,7 @@ class SettingsPage(QWidget):
         layout.addWidget(peak_grp)
 
         # 6 — Dual-Resonance
-        dr_grp = QGroupBox("Dual-Resonance")
+        dr_grp = QGroupBox(f"{EMOJI['dual']} Dual-Resonance")
         dr_form = QFormLayout(dr_grp)
         self._dr_ratio = QDoubleSpinBox(); self._dr_ratio.setRange(1.0, 5.0); self._dr_ratio.setValue(1.2); self._dr_ratio.setSingleStep(0.1)
         self._dr_shift = QDoubleSpinBox(); self._dr_shift.setRange(0.01, 5.0); self._dr_shift.setValue(0.3); self._dr_shift.setSingleStep(0.05)
@@ -117,7 +123,7 @@ class SettingsPage(QWidget):
         layout.addWidget(dr_grp)
 
         # 7 — Config File
-        cfg_grp = QGroupBox("Configuration File")
+        cfg_grp = QGroupBox(f"{EMOJI['save']} Configuration File")
         cfg_layout = QVBoxLayout(cfg_grp)
         btn_row = QHBoxLayout()
         btn_load = QPushButton("Load Config...")
@@ -137,8 +143,8 @@ class SettingsPage(QWidget):
         bottom = QHBoxLayout()
         btn_reset = QPushButton("Reset to Defaults")
         btn_reset.clicked.connect(self._reset_defaults)
-        btn_apply = QPushButton("Save Settings")
-        btn_apply.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 8px;")
+        btn_apply = QPushButton(f"{EMOJI['save']} Save Settings")
+        btn_apply.setStyleSheet(BUTTON_SUCCESS)
         btn_apply.clicked.connect(self._save_settings)
         bottom.addWidget(btn_reset)
         bottom.addStretch()

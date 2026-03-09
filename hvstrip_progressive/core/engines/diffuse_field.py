@@ -7,7 +7,9 @@ by the external ``HVf`` executable.
 """
 
 import platform
+import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -164,8 +166,15 @@ class DiffuseFieldEngine(BaseForwardEngine):
             text = Path(model_path).read_text(encoding="utf-8", errors="ignore")
             model_file.write_text(text, encoding="utf-8")
 
+            # Copy exe into temp dir to avoid long-path / permission issues
+            local_exe = tdir_p / exe_path.name
+            try:
+                shutil.copy2(str(exe_path), str(local_exe))
+            except (PermissionError, OSError):
+                local_exe = exe_path  # fall back to original path
+
             cmd = [
-                str(exe_path),
+                str(local_exe),
                 "-hv",
                 "-f", str(model_file),
                 "-fmin", str(cfg["fmin"]),
@@ -176,6 +185,15 @@ class DiffuseFieldEngine(BaseForwardEngine):
                 "-nks", str(cfg["nks"]),
             ]
 
+            # Hide console window on Windows
+            kwargs: Dict = {}
+            if sys.platform == "win32":
+                si = subprocess.STARTUPINFO()
+                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                si.wShowWindow = 0  # SW_HIDE
+                kwargs["startupinfo"] = si
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
             try:
                 result = subprocess.run(
                     cmd,
@@ -184,11 +202,24 @@ class DiffuseFieldEngine(BaseForwardEngine):
                     text=True,
                     check=True,
                     timeout=120,
+                    **kwargs,
                 )
             except subprocess.CalledProcessError as e:
-                raise RuntimeError(f"HVf.exe failed: {e.stderr}") from e
+                raise RuntimeError(
+                    f"HVf.exe failed (exit code {e.returncode}):\n"
+                    f"  stderr: {e.stderr}\n"
+                    f"  stdout: {e.stdout}\n"
+                    f"  exe: {local_exe}\n"
+                    f"  Tip: check antivirus or run as administrator."
+                ) from e
+            except PermissionError as e:
+                raise RuntimeError(
+                    f"Permission denied running HVf.exe at {local_exe}.\n"
+                    f"  Try: (1) whitelist in antivirus, (2) run as admin, "
+                    f"(3) copy exe manually to a writable folder."
+                ) from e
             except subprocess.TimeoutExpired as e:
-                raise RuntimeError("HVf.exe timed out") from e
+                raise RuntimeError("HVf.exe timed out (120 s)") from e
 
             hv_path = tdir_p / "HV.dat"
             if hv_path.exists():

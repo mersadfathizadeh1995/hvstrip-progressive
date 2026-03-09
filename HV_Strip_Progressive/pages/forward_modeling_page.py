@@ -21,8 +21,17 @@ from ..widgets.plot_widget import MatplotlibWidget
 from ..widgets.profile_preview_widget import ProfilePreviewWidget
 from ..widgets.layer_table_widget import LayerTableWidget
 from ..workers.forward_worker import ForwardWorker
+from ..widgets.style_constants import (
+    OUTER_MARGINS, SECONDARY_LABEL, MONOSPACE_PREVIEW,
+    BUTTON_PRIMARY, GEAR_BUTTON, EMOJI,
+)
 
 ENGINES = ["diffuse_field", "sh_wave", "ellipticity"]
+ENGINE_DESCRIPTIONS = {
+    "diffuse_field": "Full diffuse wavefield H/V ratio (HVf.exe required)",
+    "sh_wave": "SH-wave transfer function (pure Python, no external tools)",
+    "ellipticity": "Rayleigh wave ellipticity (gpell.exe required)",
+}
 
 
 class ForwardModelingPage(QWidget):
@@ -51,12 +60,15 @@ class ForwardModelingPage(QWidget):
     # ═══════════════════════════════════════════════════════════
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setContentsMargins(*OUTER_MARGINS)
 
         # Header
-        hdr = QLabel("<b>HV Forward Modeling</b>")
+        hdr = QLabel(f"<b>{EMOJI['forward']} HV Forward Modeling</b>")
         hdr.setStyleSheet("font-size: 14px; padding: 4px;")
         layout.addWidget(hdr)
+        desc = QLabel("Compute theoretical H/V curves for velocity profiles using different engines")
+        desc.setStyleSheet(SECONDARY_LABEL)
+        layout.addWidget(desc)
 
         # Splitter: left (input + config) | right (plot)
         splitter = QSplitter(Qt.Horizontal)
@@ -108,6 +120,8 @@ class ForwardModelingPage(QWidget):
 
         splitter.addWidget(right_w)
         splitter.setSizes([450, 550])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
 
     # ── Tab 0: From File ────────────────────────────────────────
     def _build_file_tab(self):
@@ -248,12 +262,12 @@ class ForwardModelingPage(QWidget):
 
     # ── Frequency Parameters ────────────────────────────────────
     def _build_freq_group(self):
-        grp = QGroupBox("Frequency Parameters")
+        grp = QGroupBox(f"{EMOJI['frequency']} Frequency Parameters")
         form = QFormLayout(grp)
 
-        self._fmin = QDoubleSpinBox(); self._fmin.setRange(0.01, 10); self._fmin.setValue(0.5); self._fmin.setDecimals(2)
+        self._fmin = QDoubleSpinBox(); self._fmin.setRange(0.01, 10); self._fmin.setValue(0.2); self._fmin.setDecimals(2)
         self._fmax = QDoubleSpinBox(); self._fmax.setRange(1, 100); self._fmax.setValue(20.0); self._fmax.setDecimals(1)
-        self._nf = QSpinBox(); self._nf.setRange(50, 2000); self._nf.setValue(500)
+        self._nf = QSpinBox(); self._nf.setRange(10, 2000); self._nf.setValue(71)
         form.addRow("Freq Min (Hz):", self._fmin)
         form.addRow("Freq Max (Hz):", self._fmax)
         form.addRow("Points:", self._nf)
@@ -261,19 +275,25 @@ class ForwardModelingPage(QWidget):
         engine_row = QHBoxLayout()
         self._engine_combo = QComboBox()
         self._engine_combo.addItems(ENGINES)
+        self._engine_combo.currentTextChanged.connect(self._on_fwd_engine_changed)
         engine_row.addWidget(self._engine_combo)
         self._gear_btn = QPushButton("⚙")
         self._gear_btn.setFixedWidth(30)
+        self._gear_btn.setStyleSheet(GEAR_BUTTON)
         self._gear_btn.setToolTip("Engine Settings")
         self._gear_btn.clicked.connect(self._open_engine_settings)
         engine_row.addWidget(self._gear_btn)
         form.addRow("Engine:", engine_row)
+        self._fwd_engine_desc = QLabel(ENGINE_DESCRIPTIONS.get("diffuse_field", ""))
+        self._fwd_engine_desc.setStyleSheet(SECONDARY_LABEL)
+        self._fwd_engine_desc.setWordWrap(True)
+        form.addRow("", self._fwd_engine_desc)
 
         return grp
 
     # ── Output Directory ────────────────────────────────────────
     def _build_output_group(self):
-        grp = QGroupBox("Output Directory")
+        grp = QGroupBox(f"{EMOJI['folder']} Output Directory")
         layout = QHBoxLayout(grp)
         self._output_edit = QLineEdit()
         self._output_edit.setPlaceholderText("Select output directory for results")
@@ -289,12 +309,12 @@ class ForwardModelingPage(QWidget):
         layout = QHBoxLayout(w)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self._btn_compute = QPushButton("Compute HV Curve")
-        self._btn_compute.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 8px;")
+        self._btn_compute = QPushButton(f"{EMOJI['run']} Compute HV Curve")
+        self._btn_compute.setStyleSheet(BUTTON_PRIMARY)
         self._btn_compute.clicked.connect(self._run_forward)
         layout.addWidget(self._btn_compute)
 
-        self._btn_save = QPushButton("Save Results...")
+        self._btn_save = QPushButton(f"{EMOJI['save']} Save Results...")
         self._btn_save.setEnabled(False)
         self._btn_save.clicked.connect(self._save_results)
         layout.addWidget(self._btn_save)
@@ -302,11 +322,12 @@ class ForwardModelingPage(QWidget):
 
     # ── Results ─────────────────────────────────────────────────
     def _build_results_group(self):
-        grp = QGroupBox("Results")
+        grp = QGroupBox(f"{EMOJI['info']} Results")
         layout = QVBoxLayout(grp)
         self._results_text = QTextEdit()
         self._results_text.setReadOnly(True)
         self._results_text.setMaximumHeight(120)
+        self._results_text.setStyleSheet(MONOSPACE_PREVIEW)
         self._results_text.setPlaceholderText("Run forward model to see results here...")
         layout.addWidget(self._results_text)
         return grp
@@ -802,6 +823,11 @@ class ForwardModelingPage(QWidget):
             self._engine_settings_config = dlg.get_config()
             if self._main_window:
                 self._main_window.update_config({"engine_settings": self._engine_settings_config})
+
+    def _on_fwd_engine_changed(self, engine_name):
+        desc = ENGINE_DESCRIPTIONS.get(engine_name, "")
+        if hasattr(self, '_fwd_engine_desc'):
+            self._fwd_engine_desc.setText(desc)
 
     def _browse_output(self):
         d = QFileDialog.getExistingDirectory(self, "Select Output Directory")

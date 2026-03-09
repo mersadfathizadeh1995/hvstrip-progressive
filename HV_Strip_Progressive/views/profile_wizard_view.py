@@ -398,7 +398,7 @@ class ProfileWizardView(QWidget):
                     if bd_idx < len(finite_local):
                         bd = sum(L.thickness for L in finite_local[:bd_idx + 1])
                         layers = [(L.thickness, L.vs) for L in finite_local]
-                        res = compute_vs_average(layers, bd, use_halfspace=False)
+                        res = compute_vs_average(layers, target_depth=bd, use_halfspace=False)
                         ax.axhline(bd, color="darkred", lw=1.2, ls="--", alpha=0.7)
                         ax.annotate(f"VsAvg = {res.vs_avg:.0f} m/s",
                                     xy=(vs_max * 0.3, bd),
