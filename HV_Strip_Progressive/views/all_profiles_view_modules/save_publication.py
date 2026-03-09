@@ -168,7 +168,7 @@ def save_summary_tables(
         vs30_str = "—"
         if r.profile:
             try:
-                from hvstrip_progressive.core.vs_average import (
+                from ...core.vs_average import (
                     vs_average_from_profile,
                 )
                 res30 = vs_average_from_profile(r.profile, target_depth=30.0)
@@ -354,7 +354,7 @@ def save_f0_vs_vs30(
         f0, _ = resolve_peak(peak_data, r)
         if f0 and r.profile:
             try:
-                from hvstrip_progressive.core.vs_average import (
+                from ...core.vs_average import (
                     vs_average_from_profile,
                 )
                 res30 = vs_average_from_profile(r.profile, target_depth=30.0)

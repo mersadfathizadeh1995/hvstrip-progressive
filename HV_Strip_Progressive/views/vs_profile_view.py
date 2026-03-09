@@ -99,7 +99,7 @@ class VsProfileView(QWidget):
         if self._profile is None:
             return
         try:
-            from hvstrip_progressive.core.vs_average import (
+            from ..core.vs_average import (
                 vs_average_from_profile, compute_vs_average,
             )
             # Vs30

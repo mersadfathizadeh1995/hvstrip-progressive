@@ -66,8 +66,8 @@ class MultiForwardWorker(QThread):
     def run(self):
         import numpy as np
         try:
-            from hvstrip_progressive.core.hv_forward import compute_hv_curve
-            from hvstrip_progressive.core.soil_profile import SoilProfile
+            from ..core.hv_forward import compute_hv_curve
+            from ..core.soil_profile import SoilProfile
         except ImportError as e:
             self.error.emit(f"Import error: {e}")
             return
@@ -150,7 +150,7 @@ class MultiForwardWorker(QThread):
 
     def _load_profile(self, name, path_or_data, fmt):
         """Load a SoilProfile from a path or editor data."""
-        from hvstrip_progressive.core.soil_profile import SoilProfile
+        from ..core.soil_profile import SoilProfile
 
         if fmt == "editor" and isinstance(path_or_data, dict):
             # Editor data — construct from dict

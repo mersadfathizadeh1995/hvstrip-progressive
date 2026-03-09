@@ -172,8 +172,7 @@ class _EditorPage(QWidget):
             "Model Files (*.txt *.csv);;All Files (*)")
         if path:
             try:
-                from ...hvstrip_progressive.core.soil_profile import SoilProfile
-                profile = SoilProfile.from_auto(path)
+                from ..core.soil_profile import SoilProfile                profile = SoilProfile.from_auto(path)
                 if self._table and hasattr(self._table, 'set_profile'):
                     self._table.set_profile(profile)
                 self.profile_changed.emit(profile)
@@ -343,12 +342,12 @@ class FormatInputStack(QWidget):
         fmt = ALL_FORMATS[idx]
 
         try:
-            from ...hvstrip_progressive.core.soil_profile import SoilProfile
+            from ..core.soil_profile import SoilProfile
         except ImportError:
             try:
                 import importlib
                 mod = importlib.import_module(
-                    "hvstrip_progressive.core.soil_profile")
+                    "HV_Strip_Progressive.core.soil_profile")
                 SoilProfile = mod.SoilProfile
             except ImportError:
                 self._status.setText("Cannot import SoilProfile")

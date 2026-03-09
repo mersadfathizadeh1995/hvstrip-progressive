@@ -44,7 +44,7 @@ def save_combined_csv(
             vs30_str = ""
             if r.profile:
                 try:
-                    from hvstrip_progressive.core.vs_average import (
+                    from ...core.vs_average import (
                         vs_average_from_profile,
                     )
                     res30 = vs_average_from_profile(

@@ -502,7 +502,7 @@ class ForwardMultiPanel(QWidget):
             pass
 
         try:
-            from hvstrip_progressive.core.vs_average import vs_average_from_profile
+            from ..core.vs_average import vs_average_from_profile
             res30 = vs_average_from_profile(r.profile, target_depth=30.0)
             with open(prof_dir / "vs30_info.txt", "w") as f:
                 f.write(f"Vs30_m_per_s,{res30.vs_avg:.2f}\n")

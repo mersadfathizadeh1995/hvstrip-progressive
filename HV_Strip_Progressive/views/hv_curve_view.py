@@ -181,7 +181,7 @@ class HVCurveView(QWidget):
 
         # Vs30 annotation
         try:
-            from hvstrip_progressive.core.vs_average import vs_average_from_profile
+            from ..core.vs_average import vs_average_from_profile
             result = vs_average_from_profile(prof, target_depth=30.0)
             ax.axhline(30.0, color="blue", lw=0.8, ls="-.", alpha=0.5)
             ax.annotate(f"Vs30={result.vs_avg:.0f}",

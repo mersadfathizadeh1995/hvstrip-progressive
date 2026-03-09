@@ -89,7 +89,7 @@ def save_vs_figure(
     vs_max = max(vs) if vs else 500
 
     try:
-        from hvstrip_progressive.core.vs_average import vs_average_from_profile
+        from ...core.vs_average import vs_average_from_profile
         res30 = vs_average_from_profile(r.profile, target_depth=30.0)
         ax.axhline(30.0, color="blue", lw=0.8, ls="-.", alpha=0.6)
         ax.annotate(f"Vs30 = {res30.vs_avg:.0f} m/s",
@@ -108,7 +108,7 @@ def save_vs_info(r, prof_dir: Path) -> None:
     if not r.profile:
         return
     try:
-        from hvstrip_progressive.core.vs_average import vs_average_from_profile
+        from ...core.vs_average import vs_average_from_profile
         res = vs_average_from_profile(r.profile, target_depth=30.0)
         with open(prof_dir / "vs30_info.txt", "w") as f:
             f.write(f"Vs30_m_per_s,{res.vs_avg:.2f}\n")
