@@ -723,17 +723,22 @@ class AllProfilesView(QWidget):
     def _redraw_vs(self, *_args):
         """Draw all Vs profiles overlaid — robust singular matrix fix."""
         profiles = [r for r in self._results if r.profile]
+        fig = self._vs_plot.figure
+
+        # Guard: if the widget has zero size, skip (avoids singular matrix)
+        size = fig.get_size_inches()
+        if size[0] < 0.1 or size[1] < 0.1:
+            return
+
         if not profiles:
-            fig = self._vs_plot.figure
             fig.clear()
             ax = fig.add_subplot(111)
             ax.text(0.5, 0.5, "No Vs data", transform=ax.transAxes,
                     ha="center", va="center", color="gray")
-            fig.tight_layout()
+            self._safe_tight_layout(fig)
             self._vs_plot.refresh()
             return
 
-        fig = self._vs_plot.figure
         fig.clear()
         ax = fig.add_subplot(111)
 
@@ -761,7 +766,7 @@ class AllProfilesView(QWidget):
         if not any_data:
             ax.text(0.5, 0.5, "No Vs data", transform=ax.transAxes,
                     ha="center", va="center", color="gray")
-            fig.tight_layout()
+            self._safe_tight_layout(fig)
             self._vs_plot.refresh()
             return
 
@@ -806,15 +811,26 @@ class AllProfilesView(QWidget):
 
         if n <= 10:
             ax.legend(fontsize=6, loc="lower right")
-        fig.tight_layout()
+        self._safe_tight_layout(fig)
         self._vs_plot.refresh()
 
     def _toggle_vs(self, show):
         self._vs_panel.setVisible(show)
         if show and self._results:
-            self._redraw_vs()
+            # Defer redraw so Qt can lay out the newly-visible widget first;
+            # without this the figure has a 0×0 size → singular matrix.
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(50, self._redraw_vs)
 
     # ── Statistics ─────────────────────────────────────────────
+
+    @staticmethod
+    def _safe_tight_layout(fig):
+        """Call tight_layout, swallowing singular-matrix errors."""
+        try:
+            fig.tight_layout()
+        except Exception:
+            pass
 
     def _compute_stats(self):
         computed = [r for r in self._results if r.freqs is not None]
