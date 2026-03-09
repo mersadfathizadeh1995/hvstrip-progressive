@@ -6,6 +6,7 @@ Context-sensitive center canvas, collapsible right-side log dock.
 No toolbar — each sub-tab has its own Run button and settings inline.
 """
 import os
+import platform
 import yaml
 from pathlib import Path
 
@@ -29,13 +30,25 @@ _SETTINGS_FILE = _SETTINGS_DIR / "settings.yaml"
 ENGINES = ["diffuse_field", "sh_wave", "ellipticity"]
 
 
+def _default_hvf_exe() -> str:
+    """Resolve HVf executable inside core/engines/diffuse_wave_field/."""
+    dwf = Path(__file__).resolve().parent / "core" / "engines" / "diffuse_wave_field"
+    system = platform.system()
+    if system == "Windows":
+        p = dwf / "exe_Win" / "HVf.exe"
+    else:
+        p = dwf / "exe_Linux" / "HVf"
+        if not p.exists():
+            p = dwf / "exe_Linux" / "HVf_Serial"
+    return str(p)
+
+
 def _get_default_config():
     """Return default config matching core DEFAULT_WORKFLOW_CONFIG."""
     return {
         "engine": {"name": "diffuse_field"},
         "hv_forward": {
-            "exe_path": str(Path(__file__).resolve().parent.parent
-                           / "hvstrip_progressive" / "bin" / "exe_Win" / "HVf.exe"),
+            "exe_path": _default_hvf_exe(),
             "fmin": 0.2,
             "fmax": 20.0,
             "nf": 71,
@@ -104,8 +117,7 @@ def _get_default_config():
         "interactive_mode": False,
         "engine_settings": {
             "diffuse_field": {
-                "exe_path": str(Path(__file__).resolve().parent.parent
-                               / "hvstrip_progressive" / "bin" / "exe_Win" / "HVf.exe"),
+                "exe_path": _default_hvf_exe(),
                 "fmin": 0.2,
                 "fmax": 20.0,
                 "nf": 71,

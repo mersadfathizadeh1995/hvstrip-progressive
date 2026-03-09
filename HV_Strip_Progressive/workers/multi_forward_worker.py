@@ -191,7 +191,16 @@ class MultiForwardWorker(QThread):
         return (float(freqs[idx]), float(amps[idx]), idx)
 
     def _detect_peaks(self, freqs, amps, f0, cfg):
-        """Detect secondary peaks using scipy.signal.find_peaks.
+        """Detect secondary peaks using two strategies.
+
+        Strategy 1 (ranged): When a frequency range is specified for a
+        secondary peak, directly find the maximum amplitude within that range.
+        This bypasses scipy prominence requirements — if the user tells us
+        where to look, we trust the range.
+
+        Strategy 2 (unranged): When no range is specified, use
+        ``scipy.signal.find_peaks`` with the configured prominence/amplitude
+        thresholds and pick the strongest remaining candidates.
 
         Parameters
         ----------
@@ -207,57 +216,73 @@ class MultiForwardWorker(QThread):
         try:
             from scipy.signal import find_peaks as _find_peaks
         except ImportError:
-            return []
+            _find_peaks = None
 
         min_prom = cfg.get("min_prominence", 0.3)
         min_amp = cfg.get("min_amplitude", 1.5)
         n_secondary = cfg.get("n_secondary", 1)
         ranges = cfg.get("ranges", [])
 
-        # Find all peaks in the amplitude curve
-        peak_indices, properties = _find_peaks(amps, prominence=min_prom)
-
-        # Filter by minimum amplitude
-        peak_indices = [p for p in peak_indices if amps[p] >= min_amp]
-
-        # Exclude the primary peak — use frequency-based tolerance instead
-        # of hard-coded index distance.  Tolerance = 5% of f0 frequency or
-        # 2× the local frequency spacing, whichever is larger.
+        # Primary peak exclusion tolerance
         f0_freq = f0[0] if f0 else 0.0
         if len(freqs) > 1:
-            # Average spacing near f0 in log-scale
             df = np.median(np.diff(freqs)) if len(freqs) > 1 else 0.01
             tol = max(f0_freq * 0.05, 2 * df)
         else:
             tol = f0_freq * 0.05
-        peak_indices = [p for p in peak_indices
-                        if abs(freqs[p] - f0_freq) > tol]
 
-        # Apply frequency range filters for secondary peaks
+        # Pre-compute scipy peaks for unranged fallback
+        scipy_peaks = []
+        if _find_peaks is not None:
+            peak_indices, _ = _find_peaks(amps, prominence=min_prom)
+            scipy_peaks = [p for p in peak_indices
+                           if amps[p] >= min_amp
+                           and abs(freqs[p] - f0_freq) > tol]
+
+        # Track indices already claimed (primary + earlier secondaries)
+        claimed_indices = set()
+        if f0 and len(f0) >= 3:
+            claimed_indices.add(f0[2])
+
         secondary = []
         for si in range(n_secondary):
             rng = ranges[si + 1] if (si + 1) < len(ranges) else None
+
             best = None
             best_amp = -1.0
 
-            for p in peak_indices:
-                f = float(freqs[p])
-                a = float(amps[p])
+            if rng:
+                # Strategy 1: direct max search within the specified range
+                fmin_r = rng.get("min", 0.0)
+                fmax_r = rng.get("max", 999.0)
+                mask = (freqs >= fmin_r) & (freqs <= fmax_r)
 
-                if rng:
-                    fmin_r = rng.get("min", 0.0)
-                    fmax_r = rng.get("max", 999.0)
-                    if f < fmin_r or f > fmax_r:
+                for idx in range(len(freqs)):
+                    if not mask[idx]:
                         continue
-
-                if a > best_amp:
-                    best_amp = a
-                    best = (f, a, int(p))
+                    if idx in claimed_indices:
+                        continue
+                    if abs(freqs[idx] - f0_freq) <= tol:
+                        continue
+                    a = float(amps[idx])
+                    if a > best_amp:
+                        best_amp = a
+                        best = (float(freqs[idx]), a, idx)
+            else:
+                # Strategy 2: pick best from scipy-detected peaks
+                for p in scipy_peaks:
+                    if p in claimed_indices:
+                        continue
+                    a = float(amps[p])
+                    if a > best_amp:
+                        best_amp = a
+                        best = (float(freqs[p]), a, int(p))
 
             if best:
                 secondary.append(best)
-                # Remove from candidates
-                peak_indices = [p for p in peak_indices if p != best[2]]
+                claimed_indices.add(best[2])
+                # Also remove from scipy list for subsequent iterations
+                scipy_peaks = [p for p in scipy_peaks if p != best[2]]
 
         return secondary
 

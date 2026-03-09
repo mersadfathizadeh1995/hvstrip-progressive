@@ -21,24 +21,26 @@ from .base import BaseForwardEngine, EngineResult
 
 
 def _get_default_exe_path() -> str:
-    """Auto-detect the HVf executable based on OS."""
-    # Go up to hvstrip-progressive/ then into hvstrip_progressive/bin/
-    gui_pkg = Path(__file__).parent.parent.parent   # HV_Strip_Progressive/
-    pkg_dir = gui_pkg.parent / "hvstrip_progressive"
-    bin_dir = pkg_dir / "bin"
+    """Auto-detect the HVf executable based on OS.
+
+    Looks in the ``diffuse_wave_field`` directory that sits alongside this
+    module: ``core/engines/diffuse_wave_field/exe_Win/`` (Windows) or
+    ``core/engines/diffuse_wave_field/exe_Linux/`` (Linux).
+    """
+    dwf_dir = Path(__file__).parent / "diffuse_wave_field"
 
     system = platform.system()
     if system == "Windows":
-        candidates = [bin_dir / "exe_Win" / "HVf.exe"]
+        candidates = [dwf_dir / "exe_Win" / "HVf.exe"]
     elif system == "Linux":
         candidates = [
-            bin_dir / "exe_Linux" / "HVf",
-            bin_dir / "exe_Linux" / "HVf_Serial",
+            dwf_dir / "exe_Linux" / "HVf",
+            dwf_dir / "exe_Linux" / "HVf_Serial",
         ]
     else:
         candidates = [
-            bin_dir / "exe_Linux" / "HVf",
-            bin_dir / "exe_Linux" / "HVf_Serial",
+            dwf_dir / "exe_Linux" / "HVf",
+            dwf_dir / "exe_Linux" / "HVf_Serial",
         ]
 
     for candidate in candidates:

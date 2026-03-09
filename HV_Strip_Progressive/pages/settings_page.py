@@ -71,7 +71,7 @@ class SettingsPage(QWidget):
         hvf_grp = QGroupBox(f"{EMOJI['file']} HVf Executable")
         hvf_layout = QHBoxLayout(hvf_grp)
         self._hvf_path = QLineEdit()
-        self._hvf_path.setPlaceholderText("Auto-detect from bin/exe_Win/HVf.exe")
+        self._hvf_path.setPlaceholderText("Auto-detect (core/engines/diffuse_wave_field/)")
         hvf_layout.addWidget(self._hvf_path)
         btn_hvf = QPushButton("Browse...")
         btn_hvf.clicked.connect(self._browse_hvf)
