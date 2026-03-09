@@ -113,9 +113,9 @@ class MultiForwardWorker(QThread):
                     freqs_arr = np.asarray(freqs)
                     amps_arr = np.asarray(amps)
 
-                    # Auto-detect f0 (simple argmax)
-                    idx = int(np.argmax(amps_arr))
-                    f0 = (float(freqs_arr[idx]), float(amps_arr[idx]), idx)
+                    # Auto-detect f0 — apply primary range if configured
+                    f0 = self._detect_f0(freqs_arr, amps_arr,
+                                         self._auto_peak_config)
 
                     # Auto-detect secondary peaks if config provided
                     secondary = []
@@ -163,6 +163,33 @@ class MultiForwardWorker(QThread):
                 name=name)
         return SoilProfile.from_auto(path, name=name)
 
+    def _detect_f0(self, freqs, amps, cfg):
+        """Detect primary peak, honouring ranges[0] if configured.
+
+        If the user specified a frequency range for the primary peak, the
+        search is restricted to that range.  Otherwise global argmax is used.
+        """
+        import numpy as np
+
+        rng = None
+        if cfg:
+            ranges = cfg.get("ranges", [])
+            if ranges:
+                rng = ranges[0]  # Primary peak range (index 0)
+
+        if rng:
+            fmin_r = rng.get("min", 0.0)
+            fmax_r = rng.get("max", 999.0)
+            mask = (freqs >= fmin_r) & (freqs <= fmax_r)
+            if np.any(mask):
+                masked_amps = np.where(mask, amps, -np.inf)
+                idx = int(np.argmax(masked_amps))
+                return (float(freqs[idx]), float(amps[idx]), idx)
+
+        # Fallback: global maximum
+        idx = int(np.argmax(amps))
+        return (float(freqs[idx]), float(amps[idx]), idx)
+
     def _detect_peaks(self, freqs, amps, f0, cfg):
         """Detect secondary peaks using scipy.signal.find_peaks.
 
@@ -193,9 +220,18 @@ class MultiForwardWorker(QThread):
         # Filter by minimum amplitude
         peak_indices = [p for p in peak_indices if amps[p] >= min_amp]
 
-        # Exclude the primary peak (f0)
-        f0_idx = f0[2] if f0 else -1
-        peak_indices = [p for p in peak_indices if abs(p - f0_idx) > 3]
+        # Exclude the primary peak — use frequency-based tolerance instead
+        # of hard-coded index distance.  Tolerance = 5% of f0 frequency or
+        # 2× the local frequency spacing, whichever is larger.
+        f0_freq = f0[0] if f0 else 0.0
+        if len(freqs) > 1:
+            # Average spacing near f0 in log-scale
+            df = np.median(np.diff(freqs)) if len(freqs) > 1 else 0.01
+            tol = max(f0_freq * 0.05, 2 * df)
+        else:
+            tol = f0_freq * 0.05
+        peak_indices = [p for p in peak_indices
+                        if abs(freqs[p] - f0_freq) > tol]
 
         # Apply frequency range filters for secondary peaks
         secondary = []
