@@ -40,7 +40,7 @@ class BatchWorker(QThread):
 
                 self.progress.emit(f"Processing {name} ({i+1}/{total})...", i, total)
                 try:
-                    result = run_complete_workflow(fpath, profile_out, config=self._config)
+                    result = run_complete_workflow(fpath, profile_out, workflow_config=self._config)
                     results.append({"name": name, "path": fpath, "status": "success", "result": result})
                 except Exception as e:
                     results.append({"name": name, "path": fpath, "status": "error", "error": str(e)})

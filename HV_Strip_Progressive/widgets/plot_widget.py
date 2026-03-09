@@ -1,7 +1,21 @@
 """Reusable matplotlib canvas widget for PyQt5."""
+import os as _os
+# Ensure matplotlib binds to PyQt5, not PySide6 (both may be installed)
+_os.environ["QT_API"] = "pyqt5"
+
+import matplotlib
+try:
+    matplotlib.use("Qt5Agg")
+except Exception:
+    pass
+
 from PyQt5.QtWidgets import QWidget, QVBoxLayout
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
+
+try:
+    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
+except ImportError:
+    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
 
 
 class MatplotlibWidget(QWidget):

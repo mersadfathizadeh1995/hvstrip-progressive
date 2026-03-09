@@ -20,13 +20,13 @@ class WorkflowWorker(QThread):
 
     def run(self):
         try:
-            from core.batch_workflow import run_complete_workflow
+            from hvstrip_progressive.core.batch_workflow import run_complete_workflow
 
             self.progress.emit("Starting stripping workflow...")
             result = run_complete_workflow(
                 self._model_path,
                 self._output_dir,
-                config=self._config,
+                workflow_config=self._config,
             )
             self.progress.emit("Workflow completed.")
             self.finished_signal.emit(result if isinstance(result, dict) else {"result": result})
