@@ -557,7 +557,7 @@ class StripWizardView(QWidget):
         if self._drag_rect is not None:
             try:
                 self._drag_rect.remove()
-            except ValueError:
+            except (ValueError, NotImplementedError):
                 pass
             self._drag_rect = None
 
@@ -646,7 +646,7 @@ class StripWizardView(QWidget):
         if self._drag_rect is not None:
             try:
                 self._drag_rect.remove()
-            except ValueError:
+            except (ValueError, NotImplementedError):
                 pass
             self._drag_rect = None
 

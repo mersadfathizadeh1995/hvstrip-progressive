@@ -9,6 +9,7 @@ Provides:
 
 from pathlib import Path
 from typing import Dict, List, Optional
+import warnings
 
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
@@ -62,7 +63,9 @@ def draw_resonance_separation(
     _draw_hv_panel(ax_hv, *data["hv"], **kw)
     _draw_vs_panel(ax_vs, data["layers"], data["n_kept"], **kw)
     try:
-        fig.tight_layout()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            fig.tight_layout()
     except Exception:
         pass
     return True
