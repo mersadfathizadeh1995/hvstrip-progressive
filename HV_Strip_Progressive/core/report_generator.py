@@ -76,6 +76,48 @@ def _spread_annotations(annotations, min_gap_pts=14):
             prev.xyann = (px, -(abs(py) + min_gap_pts))
 
 
+def _annotate_peaks_staircase(ax, peaks, colors, annot_size, off_x, off_y):
+    """Place peak annotations below their markers with leader-line arrows.
+
+    Peaks are sorted by frequency (x).  The text is placed at a staircase
+    of y-offsets below each peak so labels never overlap, with an arrow
+    from the text to the scatter dot.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    peaks : list[tuple(freq, amp, color_index)]
+        Each element is ``(peak_freq, peak_amp, plot_color)``.
+    colors : array-like
+        Colormap array (indexed by step).
+    annot_size : int
+        Font size for annotations.
+    off_x, off_y : int
+        Base offsets in points (off_y controls how far below to start).
+    """
+    if not peaks:
+        return
+    # Sort peaks by frequency so the staircase goes left→right
+    peaks_sorted = sorted(peaks, key=lambda p: p[0])
+    n = len(peaks_sorted)
+    # Staircase: each successive label is placed a bit lower
+    step_pts = max(annot_size + 8, 16)  # vertical spacing between labels
+    for rank, (pf, pa, clr) in enumerate(peaks_sorted):
+        y_off = -(off_y + rank * step_pts)
+        ax.annotate(
+            f"{pf:.2f} Hz\n{pa:.1f}",
+            xy=(pf, pa),
+            xytext=(off_x, y_off),
+            textcoords='offset points',
+            fontsize=annot_size,
+            ha='left', va='top',
+            bbox=dict(boxstyle='round,pad=0.2', fc='white',
+                      alpha=0.8, lw=0.5),
+            arrowprops=dict(arrowstyle='->', color=clr,
+                            lw=0.8, connectionstyle='arc3,rad=0.15')
+        )
+
+
 class ProgressiveStrippingReporter:
     """Generate comprehensive reports from progressive layer stripping analysis."""
     
@@ -815,9 +857,8 @@ class ProgressiveStrippingReporter:
         show_annot = kw.get("show_annotations", True)
         annot_size = kw.get("annotation_size", max(font - 2, 6))
         off_x = kw.get("annotation_offset_x", 6)
-        off_y = kw.get("annotation_offset_y", 6)
-        auto_arrange = kw.get("auto_arrange_labels", True)
-        _annots = []
+        off_y = kw.get("annotation_offset_y", 14)
+        _peak_info = []  # (freq, amp, color) for staircase annotation
         for i, sd in enumerate(self.step_data):
             hv = sd['hv_data']
             freqs, amps = hv.get('frequencies', []), hv.get('amplitudes', [])
@@ -833,17 +874,10 @@ class ProgressiveStrippingReporter:
                     ax.scatter(pf, pa, color=colors[i], s=marker_size * 10,
                                edgecolors='white', linewidth=1, zorder=5)
                     if show_annot:
-                        ann = ax.annotate(
-                            f"{pf:.2f} Hz\n{pa:.1f}",
-                            (pf, pa), fontsize=annot_size,
-                            xytext=(off_x, off_y),
-                            textcoords='offset points',
-                            ha='left', va='bottom',
-                            bbox=dict(boxstyle='round,pad=0.2',
-                                      fc='white', alpha=0.7, lw=0.5))
-                        _annots.append(ann)
-        if auto_arrange and _annots:
-            _spread_annotations(_annots)
+                        _peak_info.append((pf, pa, colors[i]))
+        if _peak_info:
+            _annotate_peaks_staircase(ax, _peak_info, colors, annot_size,
+                                      off_x, off_y)
 
         if log_x:
             ax.set_xscale('log')
@@ -1096,7 +1130,7 @@ class ProgressiveStrippingReporter:
         ax4 = fig.add_subplot(2, 2, 4)
 
         # (a) HV curves — first, mid, last
-        _annots_a = []
+        _peaks_a = []
         indices = [0, len(self.step_data) // 2, len(self.step_data) - 1]
         for ci, si in enumerate(indices):
             if si < len(self.step_data):
@@ -1114,13 +1148,10 @@ class ProgressiveStrippingReporter:
                             ax1.scatter(pf, pa, color=cmap_colors[si],
                                         s=50, edgecolors='white', lw=1,
                                         zorder=5)
-                            ann = ax1.annotate(
-                                f"{pf:.2f}", (pf, pa), fontsize=annot_size,
-                                xytext=(off_x, off_y),
-                                textcoords='offset points')
-                            _annots_a.append(ann)
-        if auto_arrange and _annots_a:
-            _spread_annotations(_annots_a)
+                            _peaks_a.append((pf, pa, cmap_colors[si]))
+        if _peaks_a:
+            _annotate_peaks_staircase(ax1, _peaks_a, cmap_colors,
+                                      annot_size, off_x, max(off_y, 10))
         ax1.set_xlabel('Frequency (Hz)', fontsize=font)
         ax1.set_ylabel('H/V Amplitude', fontsize=font)
         ax1.set_title('(a) HVSR Evolution', fontweight='bold', fontsize=font)
