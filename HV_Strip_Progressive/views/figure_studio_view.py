@@ -272,6 +272,9 @@ class FigureStudioView(QWidget):
         form.setContentsMargins(4, 2, 4, 2)
         form.setSpacing(2)
 
+        PALETTES = ["Blues", "BuPu", "GnBu", "PuBu", "YlGnBu",
+                     "cividis", "viridis", "plasma", "inferno", "tab10"]
+
         def _spin_int(lo, hi, val, step=1):
             s = QSpinBox(); s.setRange(lo, hi); s.setValue(val)
             s.setSingleStep(step)
@@ -286,14 +289,21 @@ class FigureStudioView(QWidget):
             c = QComboBox(); c.addItems(items); c.setCurrentIndex(idx)
             return c
 
+        def _add_annotation_controls(controls, form_layout):
+            """Add show_annotations checkbox + annotation_size spinner."""
+            controls["show_annotations"] = QCheckBox()
+            controls["show_annotations"].setChecked(True)
+            form_layout.addRow("Peak Labels:", controls["show_annotations"])
+            controls["annotation_size"] = _spin_int(5, 18, 8)
+            form_layout.addRow("Label Size:", controls["annotation_size"])
+
         # Store controls on the widget for retrieval
         w._controls = {}
 
         if key == "hv_overlay":
             w._controls["log_x"] = QCheckBox(); w._controls["log_x"].setChecked(True)
             w._controls["grid"] = QCheckBox(); w._controls["grid"].setChecked(True)
-            w._controls["cmap"] = _combo(
-                ["cividis", "viridis", "plasma", "inferno", "magma", "tab10"])
+            w._controls["cmap"] = _combo(PALETTES)
             w._controls["linewidth"] = _spin_float(0.5, 6, 1.5)
             w._controls["alpha"] = _spin_float(0.1, 1.0, 0.85, 0.05)
             w._controls["show_peaks"] = QCheckBox()
@@ -304,6 +314,7 @@ class FigureStudioView(QWidget):
                            ("Alpha:", "alpha"), ("Show Peaks:", "show_peaks"),
                            ("Marker Size:", "marker_size")]:
                 form.addRow(lbl, w._controls[k])
+            _add_annotation_controls(w._controls, form)
 
         elif key == "peak_evolution":
             w._controls["grid"] = QCheckBox(); w._controls["grid"].setChecked(True)
@@ -315,6 +326,7 @@ class FigureStudioView(QWidget):
                            ("Marker Size:", "marker_size"),
                            ("Line Width:", "linewidth")]:
                 form.addRow(lbl, w._controls[k])
+            _add_annotation_controls(w._controls, form)
 
         elif key == "interface_analysis":
             w._controls["grid"] = QCheckBox(); w._controls["grid"].setChecked(True)
@@ -329,8 +341,7 @@ class FigureStudioView(QWidget):
         elif key == "waterfall":
             w._controls["log_x"] = QCheckBox(); w._controls["log_x"].setChecked(True)
             w._controls["grid"] = QCheckBox(); w._controls["grid"].setChecked(True)
-            w._controls["cmap"] = _combo(
-                ["cividis", "viridis", "plasma", "inferno", "tab10"])
+            w._controls["cmap"] = _combo(PALETTES)
             w._controls["linewidth"] = _spin_float(0.5, 6, 1.5)
             w._controls["alpha"] = _spin_float(0.1, 1.0, 0.85, 0.05)
             w._controls["offset_factor"] = _spin_float(0.5, 5.0, 1.0, 0.1)
@@ -341,11 +352,11 @@ class FigureStudioView(QWidget):
                            ("Alpha:", "alpha"), ("Offset Factor:", "offset_factor"),
                            ("Normalize:", "normalize")]:
                 form.addRow(lbl, w._controls[k])
+            _add_annotation_controls(w._controls, form)
 
         elif key == "publication":
             w._controls["grid"] = QCheckBox(); w._controls["grid"].setChecked(True)
-            w._controls["cmap"] = _combo(
-                ["cividis", "viridis", "plasma", "tab10"])
+            w._controls["cmap"] = _combo(PALETTES)
             w._controls["linewidth"] = _spin_float(0.5, 6, 1.5)
             w._controls["alpha"] = _spin_float(0.1, 1.0, 0.85, 0.05)
             w._controls["table_font"] = _spin_int(6, 16, 8)
@@ -353,6 +364,7 @@ class FigureStudioView(QWidget):
                            ("Line Width:", "linewidth"), ("Alpha:", "alpha"),
                            ("Table Font:", "table_font")]:
                 form.addRow(lbl, w._controls[k])
+            _add_annotation_controls(w._controls, form)
 
         elif key == "dual_resonance":
             w._controls["grid"] = QCheckBox(); w._controls["grid"].setChecked(True)

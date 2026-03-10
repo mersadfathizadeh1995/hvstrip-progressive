@@ -68,17 +68,22 @@ class HVOverlayPanel(_BasePanel):
         self.log_x = QCheckBox(); self.log_x.setChecked(True)
         self.grid = QCheckBox(); self.grid.setChecked(True)
         self.cmap = self._combo(
-            ["cividis", "viridis", "plasma", "inferno", "magma", "coolwarm", "tab10"])
+            ["Blues", "BuPu", "GnBu", "PuBu", "YlGnBu",
+             "cividis", "viridis", "plasma", "inferno", "tab10"])
         self.lw = self._spin_float(0.5, 6.0, 1.5)
         self.alpha = self._spin_float(0.1, 1.0, 0.85, 0.05)
         self.show_peaks = QCheckBox(); self.show_peaks.setChecked(True)
         self.marker_size = self._spin_int(4, 20, 8)
+        self.show_annotations = QCheckBox(); self.show_annotations.setChecked(True)
+        self.annotation_size = self._spin_int(5, 18, 8)
         self.xlim_min = self._spin_float(0, 50, 0, 0.1)
         self.xlim_max = self._spin_float(0, 100, 0, 1)
         for lbl, w in [("Log X:", self.log_x), ("Grid:", self.grid),
                         ("Colormap:", self.cmap), ("Line Width:", self.lw),
                         ("Alpha:", self.alpha), ("Show Peaks:", self.show_peaks),
                         ("Marker Size:", self.marker_size),
+                        ("Peak Labels:", self.show_annotations),
+                        ("Label Size:", self.annotation_size),
                         ("X-axis Min:", self.xlim_min), ("X-axis Max:", self.xlim_max)]:
             form.addRow(lbl, w)
 
@@ -88,6 +93,8 @@ class HVOverlayPanel(_BasePanel):
             "cmap": self.cmap.currentText(), "linewidth": self.lw.value(),
             "alpha": self.alpha.value(), "show_peaks": self.show_peaks.isChecked(),
             "marker_size": self.marker_size.value(),
+            "show_annotations": self.show_annotations.isChecked(),
+            "annotation_size": self.annotation_size.value(),
         }
         if self.xlim_min.value() > 0: kw["xlim_min"] = self.xlim_min.value()
         if self.xlim_max.value() > 0: kw["xlim_max"] = self.xlim_max.value()
@@ -102,13 +109,19 @@ class PeakEvolutionPanel(_BasePanel):
         self.show_fill = QCheckBox(); self.show_fill.setChecked(True)
         self.marker_size = self._spin_int(4, 20, 8)
         self.lw = self._spin_float(0.5, 6.0, 1.5)
+        self.show_annotations = QCheckBox(); self.show_annotations.setChecked(True)
+        self.annotation_size = self._spin_int(5, 18, 8)
         for lbl, w in [("Grid:", self.grid), ("Show Fill:", self.show_fill),
-                        ("Marker Size:", self.marker_size), ("Line Width:", self.lw)]:
+                        ("Marker Size:", self.marker_size), ("Line Width:", self.lw),
+                        ("Peak Labels:", self.show_annotations),
+                        ("Label Size:", self.annotation_size)]:
             form.addRow(lbl, w)
 
     def get_kwargs(self):
         return {"grid": self.grid.isChecked(), "show_fill": self.show_fill.isChecked(),
-                "marker_size": self.marker_size.value(), "linewidth": self.lw.value()}
+                "marker_size": self.marker_size.value(), "linewidth": self.lw.value(),
+                "show_annotations": self.show_annotations.isChecked(),
+                "annotation_size": self.annotation_size.value()}
 
 
 class InterfaceAnalysisPanel(_BasePanel):
@@ -134,15 +147,21 @@ class WaterfallPanel(_BasePanel):
         form = QFormLayout(self)
         self.log_x = QCheckBox(); self.log_x.setChecked(True)
         self.grid = QCheckBox(); self.grid.setChecked(True)
-        self.cmap = self._combo(["cividis", "viridis", "plasma", "inferno", "tab10"])
+        self.cmap = self._combo(
+            ["Blues", "BuPu", "GnBu", "PuBu", "YlGnBu",
+             "cividis", "viridis", "plasma", "inferno", "tab10"])
         self.lw = self._spin_float(0.5, 6.0, 1.5)
         self.alpha = self._spin_float(0.1, 1.0, 0.85)
         self.offset = self._spin_float(0.5, 5.0, 1.0, 0.1)
         self.normalize = QCheckBox(); self.normalize.setChecked(True)
+        self.show_annotations = QCheckBox(); self.show_annotations.setChecked(True)
+        self.annotation_size = self._spin_int(5, 18, 8)
         for lbl, w in [("Log X:", self.log_x), ("Grid:", self.grid),
                         ("Colormap:", self.cmap), ("Line Width:", self.lw),
                         ("Alpha:", self.alpha), ("Offset Factor:", self.offset),
-                        ("Normalize:", self.normalize)]:
+                        ("Normalize:", self.normalize),
+                        ("Peak Labels:", self.show_annotations),
+                        ("Label Size:", self.annotation_size)]:
             form.addRow(lbl, w)
 
     def get_kwargs(self):
@@ -151,6 +170,8 @@ class WaterfallPanel(_BasePanel):
             "cmap": self.cmap.currentText(), "linewidth": self.lw.value(),
             "alpha": self.alpha.value(), "offset_factor": self.offset.value(),
             "normalize": self.normalize.isChecked(),
+            "show_annotations": self.show_annotations.isChecked(),
+            "annotation_size": self.annotation_size.value(),
         }
 
 
@@ -159,19 +180,27 @@ class PublicationPanel(_BasePanel):
         super().__init__(parent)
         form = QFormLayout(self)
         self.grid = QCheckBox(); self.grid.setChecked(True)
-        self.cmap = self._combo(["cividis", "viridis", "plasma", "tab10"])
+        self.cmap = self._combo(
+            ["Blues", "BuPu", "GnBu", "PuBu", "YlGnBu",
+             "cividis", "viridis", "plasma", "tab10"])
         self.lw = self._spin_float(0.5, 6.0, 1.5)
         self.alpha = self._spin_float(0.1, 1.0, 0.85)
         self.table_font = self._spin_int(6, 16, 8)
+        self.show_annotations = QCheckBox(); self.show_annotations.setChecked(True)
+        self.annotation_size = self._spin_int(5, 18, 8)
         for lbl, w in [("Grid:", self.grid), ("Colormap:", self.cmap),
                         ("Line Width:", self.lw), ("Alpha:", self.alpha),
-                        ("Table Font:", self.table_font)]:
+                        ("Table Font:", self.table_font),
+                        ("Peak Labels:", self.show_annotations),
+                        ("Label Size:", self.annotation_size)]:
             form.addRow(lbl, w)
 
     def get_kwargs(self):
         return {"grid": self.grid.isChecked(), "cmap": self.cmap.currentText(),
                 "linewidth": self.lw.value(), "alpha": self.alpha.value(),
-                "table_font": self.table_font.value()}
+                "table_font": self.table_font.value(),
+                "show_annotations": self.show_annotations.isChecked(),
+                "annotation_size": self.annotation_size.value()}
 
 
 class DualResonancePanel(_BasePanel):

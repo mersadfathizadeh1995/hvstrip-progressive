@@ -766,11 +766,11 @@ class ProgressiveStrippingReporter:
         n_steps = len(self.step_data)
         if n_steps == 0:
             return False
-        cmap_name = kw.get("cmap", "cividis")
+        cmap_name = kw.get("cmap", "Blues")
         try:
-            colors = plt.colormaps[cmap_name](np.linspace(0, 1, n_steps))
+            colors = plt.colormaps[cmap_name](np.linspace(0.25, 0.95, n_steps))
         except Exception:
-            colors = plt.cm.cividis(np.linspace(0, 1, n_steps))
+            colors = plt.cm.Blues(np.linspace(0.25, 0.95, n_steps))
         lw = kw.get("linewidth", 2)
         alpha = kw.get("alpha", 0.8)
         log_x = kw.get("log_x", True)
@@ -779,6 +779,8 @@ class ProgressiveStrippingReporter:
 
         show_peaks = kw.get("show_peaks", True)
         marker_size = kw.get("marker_size", 8)
+        show_annot = kw.get("show_annotations", True)
+        annot_size = kw.get("annotation_size", max(font - 2, 6))
         for i, sd in enumerate(self.step_data):
             hv = sd['hv_data']
             freqs, amps = hv.get('frequencies', []), hv.get('amplitudes', [])
@@ -793,6 +795,14 @@ class ProgressiveStrippingReporter:
                 if pf:
                     ax.scatter(pf, pa, color=colors[i], s=marker_size * 10,
                                edgecolors='white', linewidth=1, zorder=5)
+                    if show_annot:
+                        ax.annotate(
+                            f"{pf:.2f} Hz\n{pa:.1f}",
+                            (pf, pa), fontsize=annot_size,
+                            xytext=(6, 6), textcoords='offset points',
+                            ha='left', va='bottom',
+                            bbox=dict(boxstyle='round,pad=0.2',
+                                      fc='white', alpha=0.7, lw=0.5))
 
         if log_x:
             ax.set_xscale('log')
@@ -831,11 +841,17 @@ class ProgressiveStrippingReporter:
         show_fill = kw.get("show_fill", True)
         ms = kw.get("marker_size", 8)
         lw = kw.get("linewidth", 2)
+        show_annot = kw.get("show_annotations", True)
+        annot_size = kw.get("annotation_size", max(font - 2, 6))
 
         ax1 = fig.add_subplot(3, 1, 1)
         ax1.plot(steps, peak_freqs, 'o-', lw=lw, ms=ms, color='navy')
         if show_fill:
             ax1.fill_between(steps, peak_freqs, alpha=0.2, color='navy')
+        if show_annot:
+            for s, pf in zip(steps, peak_freqs):
+                ax1.annotate(f"{pf:.2f}", (s, pf), fontsize=annot_size,
+                             xytext=(3, 5), textcoords='offset points')
         ax1.set_ylabel('Peak Freq (Hz)', fontsize=font, weight='bold')
         ax1.set_title('Peak Evolution', fontsize=font + 1, weight='bold')
         if grid:
@@ -847,6 +863,10 @@ class ProgressiveStrippingReporter:
         ax2.plot(steps, peak_amps, 'o-', lw=lw, ms=ms, color='darkred')
         if show_fill:
             ax2.fill_between(steps, peak_amps, alpha=0.2, color='darkred')
+        if show_annot:
+            for s, pa in zip(steps, peak_amps):
+                ax2.annotate(f"{pa:.1f}", (s, pa), fontsize=annot_size,
+                             xytext=(3, 5), textcoords='offset points')
         ax2.set_ylabel('Peak Amplitude', fontsize=font, weight='bold')
         if grid:
             ax2.grid(True, alpha=0.3)
@@ -929,11 +949,11 @@ class ProgressiveStrippingReporter:
         n_steps = len(self.step_data)
         if n_steps == 0:
             return False
-        cmap_name = kw.get("cmap", "cividis")
+        cmap_name = kw.get("cmap", "Blues")
         try:
-            colors = plt.colormaps[cmap_name](np.linspace(0, 1, n_steps))
+            colors = plt.colormaps[cmap_name](np.linspace(0.25, 0.95, n_steps))
         except Exception:
-            colors = plt.cm.cividis(np.linspace(0, 1, n_steps))
+            colors = plt.cm.Blues(np.linspace(0.25, 0.95, n_steps))
         offset_factor = kw.get("offset_factor", 1.5)
         lw = kw.get("linewidth", 2)
         log_x = kw.get("log_x", True)
@@ -942,6 +962,8 @@ class ProgressiveStrippingReporter:
 
         normalize = kw.get("normalize", False)
         alpha = kw.get("alpha", 0.8)
+        show_annot = kw.get("show_annotations", True)
+        annot_size = kw.get("annotation_size", max(font - 2, 6))
         max_offset = 0
         for i, sd in enumerate(self.step_data):
             hv = sd['hv_data']
@@ -957,8 +979,18 @@ class ProgressiveStrippingReporter:
             ax.plot(freqs, plot_amps + offset, color=colors[i], lw=lw, alpha=alpha,
                     label=f"Step {sd['step']} (max: {max_amp:.1f})")
             peak_idx = np.argmax(amps)
-            ax.scatter(freqs[peak_idx], plot_amps[peak_idx] + offset,
+            peak_x = freqs[peak_idx]
+            peak_y = plot_amps[peak_idx] + offset
+            ax.scatter(peak_x, peak_y,
                        color=colors[i], s=80, edgecolors='white', lw=2, zorder=5)
+            if show_annot:
+                ax.annotate(
+                    f"{peak_x:.2f} Hz",
+                    (peak_x, peak_y), fontsize=annot_size,
+                    xytext=(5, 5), textcoords='offset points',
+                    ha='left', va='bottom',
+                    bbox=dict(boxstyle='round,pad=0.15',
+                              fc='white', alpha=0.7, lw=0.5))
             max_offset = offset + 1
 
         if log_x:
@@ -985,6 +1017,18 @@ class ProgressiveStrippingReporter:
             return False
         font = kw.get("font_size", 10)
         grid = kw.get("grid", True)
+        cmap_name = kw.get("cmap", "Blues")
+        lw = kw.get("linewidth", 2)
+        alpha = kw.get("alpha", 0.85)
+        show_annot = kw.get("show_annotations", True)
+        annot_size = kw.get("annotation_size", max(font - 1, 6))
+
+        n_steps = len(self.step_data)
+        try:
+            cmap_colors = plt.colormaps[cmap_name](
+                np.linspace(0.25, 0.95, n_steps))
+        except Exception:
+            cmap_colors = plt.cm.Blues(np.linspace(0.25, 0.95, n_steps))
 
         ax1 = fig.add_subplot(2, 2, 1)
         ax2 = fig.add_subplot(2, 2, 2)
@@ -993,15 +1037,25 @@ class ProgressiveStrippingReporter:
 
         # (a) HV curves — first, mid, last
         indices = [0, len(self.step_data) // 2, len(self.step_data) - 1]
-        clrs = ['blue', 'green', 'red']
         for ci, si in enumerate(indices):
             if si < len(self.step_data):
                 sd = self.step_data[si]
                 hv = sd['hv_data']
                 f, a = hv.get('frequencies', []), hv.get('amplitudes', [])
                 if len(f):
-                    ax1.semilogx(f, a, color=clrs[ci], lw=2,
+                    ax1.semilogx(f, a, color=cmap_colors[si], lw=lw,
+                                 alpha=alpha,
                                  label=f"Step {sd['step']}")
+                    if show_annot:
+                        pf = hv.get('peak_frequency', 0)
+                        pa = hv.get('peak_amplitude', 0)
+                        if pf:
+                            ax1.scatter(pf, pa, color=cmap_colors[si],
+                                        s=50, edgecolors='white', lw=1,
+                                        zorder=5)
+                            ax1.annotate(
+                                f"{pf:.2f}", (pf, pa), fontsize=annot_size,
+                                xytext=(4, 4), textcoords='offset points')
         ax1.set_xlabel('Frequency (Hz)', fontsize=font)
         ax1.set_ylabel('H/V Amplitude', fontsize=font)
         ax1.set_title('(a) HVSR Evolution', fontweight='bold', fontsize=font)
@@ -1012,9 +1066,14 @@ class ProgressiveStrippingReporter:
         ax1.legend(fontsize=max(font - 2, 6))
 
         # (b) Peak frequency
-        ax2.plot(self.analysis['step_numbers'],
-                 self.analysis['peak_frequencies'],
-                 'o-', color='navy', lw=2, ms=6)
+        step_nums = self.analysis['step_numbers']
+        peak_freqs = self.analysis['peak_frequencies']
+        ax2.plot(step_nums, peak_freqs, 'o-', color=cmap_colors[n_steps // 2],
+                 lw=lw, ms=6, alpha=alpha)
+        if show_annot:
+            for s, pf in zip(step_nums, peak_freqs):
+                ax2.annotate(f"{pf:.2f}", (s, pf), fontsize=annot_size,
+                             xytext=(3, 4), textcoords='offset points')
         ax2.set_xlabel('Step', fontsize=font)
         ax2.set_ylabel('Peak Freq (Hz)', fontsize=font)
         ax2.set_title('(b) Peak Evolution', fontweight='bold', fontsize=font)
@@ -1028,8 +1087,14 @@ class ProgressiveStrippingReporter:
         if contrasts:
             depths = [c['depth'] for c in contrasts]
             imps = [c['impedance_contrast'] for c in contrasts]
-            ax3.plot(imps, depths, 'o-', color='darkred', lw=2, ms=6)
+            ax3.plot(imps, depths, 'o-', color=cmap_colors[-1], lw=lw,
+                     ms=6, alpha=alpha)
             ax3.invert_yaxis()
+            if show_annot:
+                for d, imp in zip(depths, imps):
+                    ax3.annotate(f"{imp:.2f}", (imp, d),
+                                 fontsize=annot_size,
+                                 xytext=(4, 0), textcoords='offset points')
         ax3.set_xlabel('Impedance Contrast', fontsize=font)
         ax3.set_ylabel('Depth (m)', fontsize=font)
         ax3.set_title('(c) Interface Profile', fontweight='bold', fontsize=font)
