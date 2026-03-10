@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional, Sequence, Tuple
 
 from .save_helpers import build_depth_vs, save_figure_pair
+from .drawing import _apply_legend
 
 
 SEC_COLORS = ["green", "purple", "orange", "brown", "teal"]
@@ -19,6 +20,7 @@ def save_profile_figure(
     figsize: Tuple[int, int] = (12, 8),
     dpi: int = 300,
     fmt: str = "png",
+    legend_cfg: Optional[dict] = None,
 ) -> None:
     """Save individual HV forward-curve figure (publication quality)."""
     from matplotlib.figure import Figure
@@ -50,8 +52,9 @@ def save_profile_figure(
                 label=f"Secondary ({s[0]:.2f} Hz, A={s[1]:.2f})")
         ax.axvline(s[0], color=sc, ls=":", lw=0.8, alpha=0.4)
 
-    ax.legend(fontsize=10, loc="upper right", framealpha=0.9,
-              edgecolor="gray")
+    lcfg = legend_cfg or dict(mode="Full", loc="upper right", fontsize=10,
+                              ncol=1, alpha=0.9, frame=True)
+    _apply_legend(ax, lcfg)
     fig.tight_layout()
     save_figure_pair(fig, prof_dir, "hv_forward_curve", dpi, fmt)
 

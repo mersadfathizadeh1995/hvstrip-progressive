@@ -49,3 +49,24 @@ FIGURE_SIZES = {
     "Publication (12×8)": (12, 8),
     "Wide (16×6)": (16, 6),
 }
+
+# Legend position choices (display label → matplotlib 'loc' value)
+LEGEND_LOCATIONS = {
+    "Upper Right": "upper right",
+    "Upper Left": "upper left",
+    "Lower Right": "lower right",
+    "Lower Left": "lower left",
+    "Center Right": "center right",
+    "Center Left": "center left",
+    "Upper Center": "upper center",
+    "Lower Center": "lower center",
+    "Best (auto)": "best",
+}
+
+# Legend display modes
+LEGEND_MODES = [
+    "Full",        # every individual profile + stats entries
+    "Summary",     # only Median/±1σ/Vs30 entries, individual profiles hidden
+    "Compact",     # all entries but smaller font, more columns
+    "Hidden",      # no legend at all
+]

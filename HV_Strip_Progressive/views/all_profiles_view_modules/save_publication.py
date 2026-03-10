@@ -21,6 +21,15 @@ from .save_helpers import (
     save_figure_pair,
 )
 from .statistics import compute_stats, get_colors
+from .drawing import _apply_legend
+
+
+def _legend_cfg_or_default(legend_cfg: Optional[dict] = None) -> dict:
+    """Return a legend config dict, falling back to publication defaults."""
+    if legend_cfg is not None:
+        return legend_cfg
+    return dict(mode="Full", loc="upper right", fontsize=7,
+                ncol=2, alpha=0.9, frame=True)
 
 
 # ── 1. Combined HV + Vs side-by-side ──────────────────────────
@@ -33,6 +42,7 @@ def save_hv_vs_combined(
     palette_name: str,
     dpi: int = 300,
     fmt: str = "png",
+    legend_cfg: Optional[dict] = None,
 ) -> None:
     """Two-panel figure: all HV curves (left) + all Vs profiles (right)."""
     n = len(computed)
@@ -74,7 +84,8 @@ def save_hv_vs_combined(
     ax1.set_title("All Profiles — H/V Curves", fontsize=12,
                   fontweight="bold")
     ax1.grid(True, alpha=0.3, which="both")
-    ax1.legend(fontsize=6, loc="upper right", ncol=2, framealpha=0.9)
+    lcfg = _legend_cfg_or_default(legend_cfg)
+    _apply_legend(ax1, lcfg, summary_labels={"Median", "±1σ"})
 
     # Right: Vs profiles
     for i, r in enumerate(computed):
@@ -95,7 +106,8 @@ def save_hv_vs_combined(
                     alpha=0.6, label="Vs30 (30 m)")
     except Exception:
         pass
-    ax2.legend(fontsize=6, loc="lower right", ncol=2, framealpha=0.9)
+    _apply_legend(ax2, _legend_cfg_or_default(legend_cfg),
+                  summary_labels={"Median", "Vs30"})
 
     fig.tight_layout()
     save_figure_pair(fig, out_dir, "publication_hv_vs_combined", dpi, fmt)
@@ -109,6 +121,7 @@ def save_median_hv(
     median_peaks: dict,
     dpi: int = 300,
     fmt: str = "png",
+    legend_cfg: Optional[dict] = None,
 ) -> None:
     """Clean figure showing only the median curve with ± 1σ band."""
     med_f, med_a, std = compute_stats(results)
@@ -144,8 +157,9 @@ def save_median_hv(
     ax.set_title("Median H/V Spectral Ratio", fontsize=14,
                  fontweight="bold")
     ax.grid(True, alpha=0.3, which="both")
-    ax.legend(fontsize=10, loc="upper right", framealpha=0.9,
-              edgecolor="gray")
+    lcfg = _legend_cfg_or_default(legend_cfg)
+    lcfg_med = {**lcfg, "fontsize": max(lcfg["fontsize"], 10)}
+    _apply_legend(ax, lcfg_med)
     fig.tight_layout()
     save_figure_pair(fig, out_dir, "publication_median_hv", dpi, fmt)
 
@@ -212,6 +226,7 @@ def save_vs_comparison(
     palette_name: str,
     dpi: int = 300,
     fmt: str = "png",
+    legend_cfg: Optional[dict] = None,
 ) -> None:
     """All Vs profiles with median Vs overlay and Vs30 line."""
     profiles = [r for r in computed if r.profile]
@@ -255,7 +270,8 @@ def save_vs_comparison(
                    alpha=0.6, label="Vs30 (30 m)")
     except Exception:
         pass
-    ax.legend(fontsize=7, loc="lower right", ncol=2, framealpha=0.9)
+    _apply_legend(ax, _legend_cfg_or_default(legend_cfg),
+                  summary_labels={"Median", "Vs30"})
     fig.tight_layout()
     save_figure_pair(fig, out_dir, "publication_vs_comparison", dpi, fmt)
 
@@ -270,6 +286,7 @@ def save_normalized_hv(
     figsize: Tuple[int, int] = (12, 8),
     dpi: int = 300,
     fmt: str = "png",
+    legend_cfg: Optional[dict] = None,
 ) -> None:
     """All curves normalised to peak amplitude = 1."""
     if not computed:
@@ -297,7 +314,8 @@ def save_normalized_hv(
     ax.set_title("Normalized H/V Comparison", fontsize=14,
                  fontweight="bold")
     ax.grid(True, alpha=0.3, which="both")
-    ax.legend(fontsize=6, loc="upper right", ncol=2, framealpha=0.9)
+    _apply_legend(ax, _legend_cfg_or_default(legend_cfg),
+                  summary_labels={"Median"})
     fig.tight_layout()
     save_figure_pair(fig, out_dir, "publication_normalized_hv", dpi, fmt)
 
@@ -310,6 +328,7 @@ def save_f0_histogram(
     peak_data: dict,
     dpi: int = 300,
     fmt: str = "png",
+    legend_cfg: Optional[dict] = None,
 ) -> None:
     """Bar chart of f0 values across all profiles."""
     f0_vals = []
@@ -333,7 +352,9 @@ def save_f0_histogram(
     ax.set_ylabel("Count", fontsize=12)
     ax.set_title("f0 Distribution Across Profiles", fontsize=14,
                  fontweight="bold")
-    ax.legend(fontsize=10, framealpha=0.9)
+    lcfg = _legend_cfg_or_default(legend_cfg)
+    lcfg_hist = {**lcfg, "fontsize": max(lcfg["fontsize"], 10)}
+    _apply_legend(ax, lcfg_hist)
     ax.grid(True, alpha=0.3, axis="y")
     fig.tight_layout()
     save_figure_pair(fig, out_dir, "publication_f0_histogram", dpi, fmt)

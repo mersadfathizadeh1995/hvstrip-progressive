@@ -23,7 +23,11 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import QFileDialog, QWidget
 
 from .all_profiles_view_modules.constants import FIGURE_SIZES
-from .all_profiles_view_modules.drawing import redraw_hv, redraw_vs
+from .all_profiles_view_modules.drawing import (
+    _get_legend_cfg,
+    redraw_hv,
+    redraw_vs,
+)
 from .all_profiles_view_modules.peak_picking import PeakPickingMixin
 from .all_profiles_view_modules.save_combined import (
     resave_hv_csv,
@@ -138,6 +142,7 @@ class AllProfilesView(PeakPickingMixin, QWidget):
 
         out_dir = base / "all_profile_output"
         out_dir.mkdir(parents=True, exist_ok=True)
+        lcfg = _get_legend_cfg(self)
 
         # Combined CSV + median
         save_combined_csv(out_dir, self._results, self._peak_data,
@@ -149,11 +154,14 @@ class AllProfilesView(PeakPickingMixin, QWidget):
             self._chk_vs.isChecked(), dpi, fmt)
         # Publication figures
         save_hv_vs_combined(out_dir, computed, self._results,
-                            self._median_peaks, palette, dpi, fmt)
-        save_median_hv(out_dir, self._results, self._median_peaks, dpi, fmt)
+                            self._median_peaks, palette, dpi, fmt,
+                            legend_cfg=lcfg)
+        save_median_hv(out_dir, self._results, self._median_peaks, dpi, fmt,
+                       legend_cfg=lcfg)
         save_summary_tables(out_dir, computed, self._results,
                             self._peak_data, self._median_peaks)
-        save_vs_comparison(out_dir, computed, palette, dpi, fmt)
+        save_vs_comparison(out_dir, computed, palette, dpi, fmt,
+                           legend_cfg=lcfg)
 
         # Update per-profile peak_info
         update_peak_files(base, self._results, self._peak_data)
@@ -187,6 +195,7 @@ class AllProfilesView(PeakPickingMixin, QWidget):
         figsize = FIGURE_SIZES.get(fig_key, (12, 8))
         computed = [r for r in self._results if r.computed]
         palette = self._palette.currentText()
+        lcfg = _get_legend_cfg(self)
 
         # Per-profile re-saves
         if opts.get("resave_profiles"):
@@ -195,7 +204,7 @@ class AllProfilesView(PeakPickingMixin, QWidget):
 
         if opts.get("resave_hv_figures"):
             resave_hv_figures(base, computed, self._peak_data,
-                              figsize, dpi, fmt)
+                              figsize, dpi, fmt, legend_cfg=lcfg)
 
         if opts.get("resave_vs_figures"):
             resave_vs_figures(base, computed, dpi)
@@ -214,19 +223,22 @@ class AllProfilesView(PeakPickingMixin, QWidget):
 
         if opts.get("paper_hv_vs"):
             save_hv_vs_combined(out_dir, computed, self._results,
-                                self._median_peaks, palette, dpi, fmt)
+                                self._median_peaks, palette, dpi, fmt,
+                                legend_cfg=lcfg)
             save_median_hv(out_dir, self._results, self._median_peaks,
-                           dpi, fmt)
+                           dpi, fmt, legend_cfg=lcfg)
             save_summary_tables(out_dir, computed, self._results,
                                 self._peak_data, self._median_peaks)
-            save_vs_comparison(out_dir, computed, palette, dpi, fmt)
+            save_vs_comparison(out_dir, computed, palette, dpi, fmt,
+                               legend_cfg=lcfg)
 
         if opts.get("normalized_hv"):
             save_normalized_hv(out_dir, computed, self._results,
-                               palette, figsize, dpi, fmt)
+                               palette, figsize, dpi, fmt, legend_cfg=lcfg)
 
         if opts.get("f0_histogram"):
-            save_f0_histogram(out_dir, computed, self._peak_data, dpi, fmt)
+            save_f0_histogram(out_dir, computed, self._peak_data, dpi, fmt,
+                              legend_cfg=lcfg)
 
         if opts.get("f0_vs_vs30"):
             save_f0_vs_vs30(out_dir, computed, self._peak_data, dpi, fmt)

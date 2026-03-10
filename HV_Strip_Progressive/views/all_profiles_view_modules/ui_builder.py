@@ -26,6 +26,8 @@ from PyQt5.QtWidgets import (
 
 from .constants import (
     FIGURE_SIZES,
+    LEGEND_LOCATIONS,
+    LEGEND_MODES,
     MARKER_SHAPES,
     PALETTES,
     Y_LIMIT_METHODS,
@@ -132,6 +134,9 @@ def _build_settings_panel(view, parent_layout, CollapsibleGroupBox) -> None:
 
     # Labels sub-group
     _build_labels_group(view, settings_lay, CollapsibleGroupBox)
+
+    # Legend sub-group
+    _build_legend_group(view, settings_lay, CollapsibleGroupBox)
 
     view._settings_group.setContentLayout(settings_lay)
     parent_layout.addWidget(view._settings_group)
@@ -377,6 +382,77 @@ def _build_labels_group(view, parent_layout, CollapsibleGroupBox) -> None:
     view._ylabel_edit.editingFinished.connect(view._redraw)
     axis_row.addWidget(view._ylabel_edit, 1)
     lay.addLayout(axis_row)
+
+    grp.setContentLayout(lay)
+    parent_layout.addWidget(grp)
+
+
+def _build_legend_group(view, parent_layout, CollapsibleGroupBox) -> None:
+    grp = CollapsibleGroupBox("Legend", collapsed=True)
+    lay = QVBoxLayout()
+    lay.setSpacing(2)
+    lay.setContentsMargins(2, 2, 2, 2)
+
+    row1 = QHBoxLayout()
+    row1.setSpacing(4)
+
+    row1.addWidget(QLabel("Mode:"))
+    view._legend_mode = QComboBox()
+    view._legend_mode.addItems(LEGEND_MODES)
+    view._legend_mode.setCurrentIndex(0)  # "Full"
+    view._legend_mode.setMaximumWidth(100)
+    view._legend_mode.setToolTip(
+        "Full: all entries · Summary: stats only · "
+        "Compact: small font, many cols · Hidden: no legend")
+    view._legend_mode.currentIndexChanged.connect(view._redraw)
+    row1.addWidget(view._legend_mode)
+
+    row1.addWidget(QLabel("Pos:"))
+    view._legend_loc = QComboBox()
+    view._legend_loc.addItems(list(LEGEND_LOCATIONS.keys()))
+    view._legend_loc.setCurrentIndex(0)  # "Upper Right"
+    view._legend_loc.setMaximumWidth(120)
+    view._legend_loc.currentIndexChanged.connect(view._redraw)
+    row1.addWidget(view._legend_loc)
+
+    row1.addStretch()
+    lay.addLayout(row1)
+
+    row2 = QHBoxLayout()
+    row2.setSpacing(4)
+
+    row2.addWidget(QLabel("Font:"))
+    view._legend_fontsize = QSpinBox()
+    view._legend_fontsize.setRange(4, 16)
+    view._legend_fontsize.setValue(7)
+    view._legend_fontsize.setMaximumWidth(55)
+    view._legend_fontsize.valueChanged.connect(view._redraw)
+    row2.addWidget(view._legend_fontsize)
+
+    row2.addWidget(QLabel("Cols:"))
+    view._legend_ncol = QSpinBox()
+    view._legend_ncol.setRange(1, 6)
+    view._legend_ncol.setValue(2)
+    view._legend_ncol.setMaximumWidth(55)
+    view._legend_ncol.valueChanged.connect(view._redraw)
+    row2.addWidget(view._legend_ncol)
+
+    row2.addWidget(QLabel("α:"))
+    view._legend_alpha = QDoubleSpinBox()
+    view._legend_alpha.setRange(0.0, 1.0)
+    view._legend_alpha.setValue(0.85)
+    view._legend_alpha.setSingleStep(0.05)
+    view._legend_alpha.setMaximumWidth(60)
+    view._legend_alpha.valueChanged.connect(view._redraw)
+    row2.addWidget(view._legend_alpha)
+
+    view._legend_frame = QCheckBox("Frame")
+    view._legend_frame.setChecked(True)
+    view._legend_frame.toggled.connect(view._redraw)
+    row2.addWidget(view._legend_frame)
+
+    row2.addStretch()
+    lay.addLayout(row2)
 
     grp.setContentLayout(lay)
     parent_layout.addWidget(grp)

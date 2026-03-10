@@ -182,3 +182,4 @@ cython_debug/
 
 # Examples
 examples/
+/hvstrip_progressive/Example

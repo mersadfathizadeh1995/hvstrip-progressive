@@ -12,7 +12,7 @@ from typing import Optional
 
 import numpy as np
 
-from .constants import MARKER_SHAPES
+from .constants import LEGEND_LOCATIONS, MARKER_SHAPES
 from .save_helpers import build_depth_vs
 from .statistics import compute_stats, get_colors
 
@@ -25,6 +25,71 @@ def safe_tight_layout(fig) -> None:
         fig.tight_layout()
     except Exception:
         pass
+
+
+def _get_legend_cfg(view) -> dict:
+    """Read legend config widgets from *view*, return a dict.
+
+    Returns ``None`` for the ``'mode'`` key when the legend should be hidden.
+    Falls back to sensible defaults if the widgets are missing (e.g. tests).
+    """
+    mode = getattr(view, "_legend_mode", None)
+    mode = mode.currentText() if mode is not None else "Full"
+
+    loc_cb = getattr(view, "_legend_loc", None)
+    loc_label = loc_cb.currentText() if loc_cb is not None else "Upper Right"
+    loc = LEGEND_LOCATIONS.get(loc_label, "upper right")
+
+    fontsize = getattr(view, "_legend_fontsize", None)
+    fontsize = fontsize.value() if fontsize is not None else 7
+
+    ncol = getattr(view, "_legend_ncol", None)
+    ncol = ncol.value() if ncol is not None else 2
+
+    alpha = getattr(view, "_legend_alpha", None)
+    alpha = alpha.value() if alpha is not None else 0.85
+
+    frame = getattr(view, "_legend_frame", None)
+    frame = frame.isChecked() if frame is not None else True
+
+    if mode == "Compact":
+        fontsize = max(4, fontsize - 1)
+        ncol = max(ncol, 3)
+
+    return dict(mode=mode, loc=loc, fontsize=fontsize,
+                ncol=ncol, alpha=alpha, frame=frame)
+
+
+def _apply_legend(ax, cfg: dict, summary_labels: Optional[set] = None) -> None:
+    """Apply legend to *ax* according to *cfg*.
+
+    *summary_labels*: set of label substrings to keep in Summary mode
+    (e.g. ``{"Median", "±1σ", "Vs30"}``).  All others are removed.
+    """
+    if cfg["mode"] == "Hidden":
+        leg = ax.get_legend()
+        if leg is not None:
+            leg.remove()
+        return
+
+    handles, labels = ax.get_legend_handles_labels()
+    if not handles:
+        return
+
+    if cfg["mode"] == "Summary" and summary_labels:
+        keep = [(h, l) for h, l in zip(handles, labels)
+                if any(sl in l for sl in summary_labels)]
+        if keep:
+            handles, labels = zip(*keep)
+        else:
+            return  # nothing to show
+
+    ax.legend(handles, labels,
+              fontsize=cfg["fontsize"],
+              loc=cfg["loc"],
+              ncol=cfg["ncol"],
+              framealpha=cfg["alpha"] if cfg["frame"] else 0.0,
+              frameon=cfg["frame"])
 
 
 def apply_smart_ylim(ax, method: str, results: list) -> None:
@@ -160,8 +225,8 @@ def redraw_hv(view) -> None:
         if method != "Auto":
             apply_smart_ylim(ax, method, results)
 
-    if n <= 15:
-        ax.legend(fontsize=6, loc="upper right", ncol=2, framealpha=0.8)
+    lcfg = _get_legend_cfg(view)
+    _apply_legend(ax, lcfg, summary_labels={"Median", "±1σ"})
     fig.tight_layout()
     view._hv_plot.refresh()
 
@@ -254,8 +319,8 @@ def redraw_vs(view) -> None:
         except Exception:
             pass
 
-    if n <= 10:
-        ax.legend(fontsize=6, loc="lower right")
+    lcfg = _get_legend_cfg(view)
+    _apply_legend(ax, lcfg, summary_labels={"Median", "Vs30"})
     safe_tight_layout(fig)
     view._vs_plot.refresh()
 

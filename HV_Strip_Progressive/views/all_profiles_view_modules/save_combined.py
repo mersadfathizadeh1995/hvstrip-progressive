@@ -142,6 +142,7 @@ def resave_hv_figures(
     figsize: Tuple[int, int],
     dpi: int,
     fmt: str,
+    legend_cfg: Optional[dict] = None,
 ) -> None:
     """Re-save per-profile HV forward-curve figures."""
     for r in results:
@@ -150,7 +151,8 @@ def resave_hv_figures(
         prof_dir = base_dir / r.name
         prof_dir.mkdir(exist_ok=True)
         f0, sec = resolve_peak(peak_data, r)
-        save_profile_figure(r, f0, sec, prof_dir, figsize, dpi, fmt)
+        save_profile_figure(r, f0, sec, prof_dir, figsize, dpi, fmt,
+                            legend_cfg=legend_cfg)
 
 
 def resave_vs_figures(
