@@ -184,6 +184,12 @@ class FigureStudioView(QWidget):
         self._btn_export.clicked.connect(self._export_current)
         row.addWidget(self._btn_export)
 
+        self._btn_csv = QPushButton(
+            f"{EMOJI.get('save', '💾')} Save CSV")
+        self._btn_csv.setToolTip("Export summary results as CSV")
+        self._btn_csv.clicked.connect(self._export_summary_csv)
+        row.addWidget(self._btn_csv)
+
         self._btn_save_all = QPushButton(
             f"{EMOJI.get('save', '💾')} Export All")
         self._btn_save_all.setStyleSheet(BUTTON_SUCCESS)
@@ -194,7 +200,7 @@ class FigureStudioView(QWidget):
         self._btn_gear.setFixedSize(28, 28)
         self._btn_gear.setStyleSheet(GEAR_BUTTON)
         self._btn_gear.setToolTip(
-            "Choose which figures to export & output directory")
+            "Choose which figures & data to export")
         self._btn_gear.clicked.connect(self._open_export_options)
         row.addWidget(self._btn_gear)
 
@@ -512,11 +518,70 @@ class FigureStudioView(QWidget):
         self._save_label.setText(
             f"Exported {len(saved)}/{len(self._active_keys)} → {Path(d).name}/")
 
+    def _export_summary_csv(self):
+        """Quick-export summary results as CSV."""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Summary CSV", "strip_summary.csv",
+            "CSV Files (*.csv);;All Files (*)")
+        if not path:
+            return
+        try:
+            self._write_summary_csv(path)
+            self._save_label.setText(f"CSV saved: {Path(path).name}")
+        except Exception as e:
+            self._save_label.setText(f"CSV error: {e}")
+
+    def _write_summary_csv(self, path):
+        """Write step results summary to CSV."""
+        if not self._reporter:
+            return
+        # Collect data from reporter
+        import csv
+        steps_data = self._reporter._load_step_data()
+        if not steps_data:
+            return
+        with open(path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Step", "Layers", "f0 (Hz)", "Amplitude",
+                            "Vs30", "VsAvg", "Status"])
+            for sd in steps_data:
+                name = sd.get("name", "")
+                n_layers = sd.get("n_layers", "?")
+                pf = sd.get("peak_frequency", "")
+                pa = sd.get("peak_amplitude", "")
+                vs30 = sd.get("vs30", "")
+                writer.writerow([name, n_layers,
+                                f"{pf:.4f}" if pf else "",
+                                f"{pa:.3f}" if pa else "",
+                                f"{vs30:.0f}" if vs30 else "",
+                                "", "OK"])
+
+    def _write_peak_data_csv(self, path):
+        """Write detailed peak data (primary + secondary) to CSV."""
+        if not self._reporter:
+            return
+        import csv
+        steps_data = self._reporter._load_step_data()
+        if not steps_data:
+            return
+        with open(path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Step", "Peak_Type", "Frequency (Hz)",
+                            "Amplitude", "Index"])
+            for sd in steps_data:
+                name = sd.get("name", "")
+                pf = sd.get("peak_frequency")
+                pa = sd.get("peak_amplitude")
+                if pf:
+                    writer.writerow([name, "primary",
+                                    f"{pf:.4f}", f"{pa:.3f}" if pa else "",
+                                    ""])
+
     def _open_export_options(self):
-        """Open dialog to choose which figures to export and where."""
+        """Open dialog to choose which figures & data to export."""
         dlg = QDialog(self)
         dlg.setWindowTitle("Export Options")
-        dlg.setMinimumWidth(380)
+        dlg.setMinimumWidth(400)
         lay = QVBoxLayout(dlg)
 
         # Output directory
@@ -552,6 +617,21 @@ class FigureStudioView(QWidget):
         fig_grp.setLayout(fig_lay)
         lay.addWidget(fig_grp)
 
+        # Data export group
+        data_grp = QGroupBox("Data Export")
+        data_lay = QVBoxLayout()
+        chk_summary_csv = QCheckBox("Summary CSV (step results, f0, Vs30)")
+        chk_summary_csv.setChecked(True)
+        data_lay.addWidget(chk_summary_csv)
+        chk_peak_csv = QCheckBox("Peak Data CSV (primary + secondary peaks)")
+        chk_peak_csv.setChecked(True)
+        data_lay.addWidget(chk_peak_csv)
+        chk_report_txt = QCheckBox("Full Report Text (comprehensive report)")
+        chk_report_txt.setChecked(False)
+        data_lay.addWidget(chk_report_txt)
+        data_grp.setLayout(data_lay)
+        lay.addWidget(data_grp)
+
         # Quality options
         qual_row = QHBoxLayout()
         chk_pdf = QCheckBox("Also export PDF")
@@ -581,6 +661,7 @@ class FigureStudioView(QWidget):
         fmt = self._export_fmt.currentText().lower()
         saved = []
 
+        # Export figures
         for i, key in enumerate(self._active_keys):
             if key not in chk_map or not chk_map[key].isChecked():
                 continue
@@ -602,8 +683,31 @@ class FigureStudioView(QWidget):
             except Exception:
                 pass
 
+        # Export data files
+        data_saved = []
+        if chk_summary_csv.isChecked():
+            try:
+                self._write_summary_csv(str(out / "strip_summary.csv"))
+                data_saved.append("summary.csv")
+            except Exception:
+                pass
+        if chk_peak_csv.isChecked():
+            try:
+                self._write_peak_data_csv(str(out / "peak_data.csv"))
+                data_saved.append("peak_data.csv")
+            except Exception:
+                pass
+        if chk_report_txt.isChecked() and self._reporter:
+            try:
+                report_path = out / "comprehensive_report.txt"
+                self._reporter.generate_text_report(str(report_path))
+                data_saved.append("report.txt")
+            except Exception:
+                pass
+
+        total = len(saved) + len(data_saved)
         self._save_label.setText(
-            f"Exported {len(saved)} figures → {out.name}/")
+            f"Exported {len(saved)} figures + {len(data_saved)} data → {out.name}/")
         if self._mw:
             self._mw.log(
-                f"Figure Studio: exported {len(saved)} figures to {out}")
+                f"Figure Studio: exported {total} items to {out}")

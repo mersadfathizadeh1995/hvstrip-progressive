@@ -216,15 +216,21 @@ class HVStripWindow(QMainWindow):
 
         # ── View ────────────────────────────────────────────────
         view_menu = mb.addMenu("&View")
-        self._act_log = QAction("Show Log Panel", self, checkable=True, checked=False)
+        self._act_log = QAction("Show Log Panel", self, checkable=True, checked=True)
         self._act_log.setShortcut("Ctrl+L")
         self._act_log.toggled.connect(self._toggle_log_dock)
         view_menu.addAction(self._act_log)
 
-        self._act_summary = QAction("Show Summary Panel", self, checkable=True, checked=False)
+        self._act_summary = QAction("Show Summary Panel", self, checkable=True, checked=True)
         self._act_summary.setShortcut("Ctrl+Shift+S")
         self._act_summary.toggled.connect(self._toggle_summary_dock)
         view_menu.addAction(self._act_summary)
+
+        self._act_strip_results = QAction(
+            "Show Strip Results", self, checkable=True, checked=True)
+        self._act_strip_results.setShortcut("Ctrl+Shift+R")
+        self._act_strip_results.toggled.connect(self._toggle_strip_results_dock)
+        view_menu.addAction(self._act_strip_results)
 
         view_menu.addAction("Reset Layout", self._reset_layout)
 
@@ -321,6 +327,9 @@ class HVStripWindow(QMainWindow):
 
         self.splitter.addWidget(self._canvas_stack)
 
+        # Connect wizard signals (after all canvases are created)
+        self._connect_wizard_signals()
+
         # ── Right: Dock toggle strip ──────────────────────────
         self._dock_strip = QWidget()
         self._dock_strip.setFixedWidth(22)
@@ -352,6 +361,62 @@ class HVStripWindow(QMainWindow):
 
         # Start with Forward Single active
         self._switch_mode(MODE_FWD_SINGLE)
+
+    def _connect_wizard_signals(self):
+        """Connect StripWizardView.wizard_finished to result handling."""
+        wiz = self._find_view_in_mode(MODE_STRIP_SINGLE, "StripWizardView")
+        if wiz and hasattr(wiz, 'wizard_finished'):
+            wiz.wizard_finished.connect(self._on_wizard_finished)
+
+    def _find_view_in_mode(self, mode, class_name):
+        """Find a specific view widget in a mode's canvas stack."""
+        canvas = self._canvas_stacks.get(mode)
+        if canvas:
+            for i in range(canvas.count()):
+                w = canvas.widget(i)
+                if type(w).__name__ == class_name:
+                    return w
+        return None
+
+    def _on_wizard_finished(self, peak_data):
+        """Handle wizard Finish: update dock, figure studio, optionally regen report."""
+        # Update strip summary dock with peak data
+        dock = self.get_strip_summary_dock()
+        if dock and hasattr(dock, 'set_results'):
+            result = getattr(self, '_result', None) or {}
+            dock.set_results(result, peak_data=peak_data)
+            dock.setVisible(True)
+            dock.raise_()
+
+        # Update figure studio (re-render with final peaks)
+        fs = self.get_figure_studio()
+        if fs and hasattr(fs, '_draw_current'):
+            fs._draw_current()
+
+        # Regenerate report if panel checkbox is checked
+        panel = getattr(self, '_strip_single_panel', None)
+        if panel and hasattr(panel, 'is_report_enabled'):
+            if panel.is_report_enabled():
+                self._regenerate_strip_report(peak_data)
+
+        self.log("Wizard finished — peak data finalized")
+
+    def _regenerate_strip_report(self, peak_data):
+        """Regenerate comprehensive report with user-selected peaks."""
+        result = getattr(self, '_result', None)
+        if not result:
+            return
+        strip_dir = result.get("strip_directory")
+        if not strip_dir:
+            return
+        try:
+            from .core.report_generator import ProgressiveStrippingReporter
+            reporter = ProgressiveStrippingReporter(
+                strip_dir, output_dir=str(Path(strip_dir).parent))
+            reporter.generate_comprehensive_report()
+            self.log("Report regenerated with updated peaks")
+        except Exception as e:
+            self.log(f"Report regen error: {e}")
 
     # ── Panel creation (placeholder for now, real panels in phase 2+) ──
     def _create_panel(self, mode, label):
@@ -500,7 +565,7 @@ class HVStripWindow(QMainWindow):
 
         self._log_dock.setWidget(self._log_view)
         self.addDockWidget(Qt.RightDockWidgetArea, self._log_dock)
-        self._log_dock.setVisible(False)  # collapsed by default
+        self._log_dock.setVisible(True)  # visible by default
 
         # Sync dock visibility with menu action
         self._log_dock.visibilityChanged.connect(self._on_log_dock_vis)
@@ -529,7 +594,7 @@ class HVStripWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self._summary_dock)
         # Tabify with log dock so user can switch between them
         self.tabifyDockWidget(self._log_dock, self._summary_dock)
-        self._summary_dock.setVisible(False)  # collapsed by default
+        self._summary_dock.setVisible(True)  # visible by default
 
         self._summary_dock.visibilityChanged.connect(self._on_summary_dock_vis)
 
@@ -545,7 +610,20 @@ class HVStripWindow(QMainWindow):
 
         self.addDockWidget(Qt.RightDockWidgetArea, self._strip_summary_dock)
         self.tabifyDockWidget(self._summary_dock, self._strip_summary_dock)
-        self._strip_summary_dock.setVisible(False)
+        self._strip_summary_dock.setVisible(True)  # visible by default
+
+        self._strip_summary_dock.visibilityChanged.connect(
+            self._on_strip_results_dock_vis)
+
+    def _on_strip_results_dock_vis(self, visible):
+        if hasattr(self, '_act_strip_results'):
+            self._act_strip_results.blockSignals(True)
+            self._act_strip_results.setChecked(visible)
+            self._act_strip_results.blockSignals(False)
+
+    def _toggle_strip_results_dock(self, show):
+        if hasattr(self, '_strip_summary_dock'):
+            self._strip_summary_dock.setVisible(show)
 
     def _on_summary_dock_vis(self, visible):
         if hasattr(self, '_act_summary'):
@@ -639,6 +717,20 @@ class HVStripWindow(QMainWindow):
                  MODE_STRIP_SINGLE, MODE_STRIP_BATCH]
         if mode in modes:
             self._canvas_stack.setCurrentIndex(modes.index(mode))
+
+        # Show/hide strip results dock based on mode
+        if hasattr(self, '_strip_summary_dock'):
+            is_strip = (mode == MODE_STRIP_SINGLE)
+            self._strip_summary_dock.setVisible(is_strip)
+            if is_strip:
+                self._strip_summary_dock.raise_()
+
+        # In strip single mode, show strip results instead of summary
+        if hasattr(self, '_summary_dock'):
+            if mode == MODE_STRIP_SINGLE:
+                self._summary_dock.setVisible(False)
+            elif hasattr(self, '_act_summary') and self._act_summary.isChecked():
+                self._summary_dock.setVisible(True)
 
         # Update status bar
         labels = {
@@ -784,12 +876,18 @@ class HVStripWindow(QMainWindow):
 
     def _reset_layout(self):
         self.splitter.setSizes([420, 1080])
-        self._log_dock.setVisible(False)
-        self._act_log.setChecked(False)
+        self._log_dock.setVisible(True)
+        self._act_log.setChecked(True)
         if hasattr(self, '_summary_dock'):
-            self._summary_dock.setVisible(False)
+            self._summary_dock.setVisible(True)
         if hasattr(self, '_act_summary'):
-            self._act_summary.setChecked(False)
+            self._act_summary.setChecked(True)
+        if hasattr(self, '_strip_summary_dock'):
+            self._strip_summary_dock.setVisible(
+                self._active_mode == MODE_STRIP_SINGLE)
+        if hasattr(self, '_act_strip_results'):
+            self._act_strip_results.setChecked(
+                self._active_mode == MODE_STRIP_SINGLE)
 
     # ══════════════════════════════════════════════════════════════
     #  PUBLIC API  (used by panels, views, dialogs)

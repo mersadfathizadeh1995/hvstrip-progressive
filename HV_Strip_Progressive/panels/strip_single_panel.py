@@ -28,6 +28,7 @@ class StripSinglePanel(QWidget):
         super().__init__(parent)
         self._mw = main_window
         self._worker = None
+        self._auto_peak_cfg = None
         self._build_ui()
 
     def _build_ui(self):
@@ -84,6 +85,37 @@ class StripSinglePanel(QWidget):
 
         settings_grp.setContentLayout(settings_lay)
         lay.addWidget(settings_grp)
+
+        # ── Peak Detection ─────────────────────────────────────
+        auto_grp = CollapsibleGroupBox(
+            f"{EMOJI['peak']} Peak Detection", collapsed=True)
+        auto_lay = QVBoxLayout()
+        auto_lay.setSpacing(2)
+
+        auto_row = QHBoxLayout()
+        self._chk_auto = QCheckBox("Auto-detect peaks")
+        self._chk_auto.setChecked(True)
+        self._chk_auto.setToolTip(
+            "When checked, uses configurable peak detection\n"
+            "(prominence + range) instead of simple max.\n"
+            "Also auto-detects secondary peaks.")
+        auto_row.addWidget(self._chk_auto)
+        self._auto_gear = QPushButton(EMOJI["settings"])
+        self._auto_gear.setFixedSize(26, 26)
+        self._auto_gear.setStyleSheet(GEAR_BUTTON)
+        self._auto_gear.setToolTip("Auto Peak Detection Settings")
+        self._auto_gear.clicked.connect(self._open_auto_peak_settings)
+        auto_row.addWidget(self._auto_gear)
+        auto_row.addStretch()
+        auto_lay.addLayout(auto_row)
+
+        self._peak_info_label = QLabel("")
+        self._peak_info_label.setStyleSheet(SECONDARY_LABEL)
+        self._peak_info_label.setWordWrap(True)
+        auto_lay.addWidget(self._peak_info_label)
+
+        auto_grp.setContentLayout(auto_lay)
+        lay.addWidget(auto_grp)
 
         # ── Output ─────────────────────────────────────────────
         out_row = QHBoxLayout()
@@ -235,6 +267,13 @@ class StripSinglePanel(QWidget):
             self._mw.update_strip_results(result)
             self._mw.log(f"Stripping done: {n_steps} steps")
 
+            # Pass auto peak config to wizard
+            wiz = self._mw.get_strip_wizard()
+            if wiz:
+                auto_cfg = self.get_auto_peak_config()
+                if auto_cfg:
+                    wiz.set_auto_peak_config(auto_cfg)
+
             # Switch to wizard tab (index 1)
             canvas = self._mw._canvas_stacks.get(self._mw._active_mode)
             if canvas and canvas.count() >= 2:
@@ -266,6 +305,23 @@ class StripSinglePanel(QWidget):
         self._progress.setVisible(False)
         self._result_label.setText("Cancelled")
 
+    def _open_auto_peak_settings(self):
+        """Open the Auto Peak Detection settings dialog."""
+        try:
+            from ..dialogs.auto_peak_settings_dialog import AutoPeakSettingsDialog
+            dlg = AutoPeakSettingsDialog(parent=self)
+            if self._auto_peak_cfg:
+                dlg._load_config(self._auto_peak_cfg)
+            if dlg.exec_() == AutoPeakSettingsDialog.Accepted:
+                self._auto_peak_cfg = dlg.get_config()
+                self._peak_info_label.setText(
+                    f"Prominence: {self._auto_peak_cfg.get('min_prominence', 0.3)}, "
+                    f"Secondary: {self._auto_peak_cfg.get('n_secondary', 1)}")
+        except ImportError:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Settings",
+                                "AutoPeakSettingsDialog not available")
+
     def _build_workflow_config(self):
         engine_name = self._engine_combo.currentText()
         cfg = {
@@ -292,3 +348,13 @@ class StripSinglePanel(QWidget):
     # ── Public API ─────────────────────────────────────────────
     def get_engine_name(self):
         return self._engine_combo.currentText()
+
+    def get_auto_peak_config(self):
+        """Return auto peak config if enabled, else None."""
+        if self._chk_auto.isChecked():
+            return self._auto_peak_cfg
+        return None
+
+    def is_report_enabled(self):
+        """Whether the user wants a comprehensive report."""
+        return self._chk_report.isChecked()

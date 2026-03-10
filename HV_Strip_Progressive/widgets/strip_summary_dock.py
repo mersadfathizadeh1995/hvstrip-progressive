@@ -154,7 +154,7 @@ class StripSummaryDock(QDockWidget):
         strip_dir = self._result.get("strip_directory", "N/A")
 
         # Collect frequencies (from peak_data first, then step_results)
-        freqs = []
+        freqs, vs30_vals = [], []
         for name in sorted(sr.keys()):
             pk = self._peak_data.get(name, {})
             f0 = pk.get("f0")
@@ -162,6 +162,10 @@ class StripSummaryDock(QDockWidget):
                 freqs.append(f0[0])
             elif sr[name].get("peak_frequency"):
                 freqs.append(sr[name]["peak_frequency"])
+            # Collect Vs30
+            v30 = pk.get("vs30") or sr[name].get("vs30")
+            if isinstance(v30, (int, float)) and v30:
+                vs30_vals.append(v30)
 
         lines = [f"Steps: {n}"]
         if freqs:
@@ -170,6 +174,9 @@ class StripSummaryDock(QDockWidget):
             if len(freqs) > 1:
                 shift = abs(freqs[-1] - freqs[0]) / freqs[0] * 100
                 lines.append(f"Total shift: {shift:.1f}%")
+        if vs30_vals:
+            lines.append(f"Vs30 range: {min(vs30_vals):.0f} – "
+                         f"{max(vs30_vals):.0f} m/s")
 
         report = self._result.get("report_files", {})
         if report:

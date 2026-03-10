@@ -14,7 +14,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QLabel,
     QPushButton, QListWidget, QListWidgetItem, QCheckBox,
-    QComboBox, QSizePolicy, QMessageBox,
+    QComboBox, QSizePolicy,
 )
 
 from ..widgets.plot_widget import MatplotlibWidget
@@ -41,8 +41,9 @@ class StripWizardView(QWidget):
         self._pick_f0 = False
         self._pick_sec = False
         self._auto_mode = True
-        self._generate_report = True
         self._auto_peak_cfg = None  # config from AutoPeakSettingsDialog
+        self._drag_start_x = None   # for click-and-release peak selection
+        self._drag_rect = None      # matplotlib patch for drag visual
         self._build_ui()
 
     # ══════════════════════════════════════════════════════════════
@@ -70,25 +71,6 @@ class StripWizardView(QWidget):
         self._info.setStyleSheet("font-weight: bold; font-size: 11px;")
         left_lay.addWidget(self._info)
 
-        # Mode toggle
-        mode_row = QHBoxLayout()
-        self._chk_auto = QCheckBox("Auto Peak Detection")
-        self._chk_auto.setChecked(True)
-        self._chk_auto.toggled.connect(self._on_auto_toggled)
-        mode_row.addWidget(self._chk_auto)
-
-        self._btn_peak_cfg = QPushButton(EMOJI.get("settings", "⚙"))
-        self._btn_peak_cfg.setFixedSize(28, 28)
-        self._btn_peak_cfg.setToolTip("Peak detection settings (ranges, prominence)")
-        self._btn_peak_cfg.clicked.connect(self._open_peak_settings)
-        mode_row.addWidget(self._btn_peak_cfg)
-        left_lay.addLayout(mode_row)
-
-        # Report checkbox
-        self._chk_report = QCheckBox("Generate Report on Finish")
-        self._chk_report.setChecked(True)
-        left_lay.addWidget(self._chk_report)
-
         left.setFixedWidth(200)
         splitter.addWidget(left)
 
@@ -115,7 +97,9 @@ class StripWizardView(QWidget):
         # HV canvas
         self._hv_plot = MatplotlibWidget(figsize=(10, 5))
         self._hv_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self._hv_plot.canvas.mpl_connect("button_press_event", self._on_click)
+        self._hv_plot.canvas.mpl_connect("button_press_event", self._on_press)
+        self._hv_plot.canvas.mpl_connect("button_release_event", self._on_release)
+        self._hv_plot.canvas.mpl_connect("motion_notify_event", self._on_motion)
         self._main_split.addWidget(self._hv_plot)
 
         # Vs mini panel
@@ -292,8 +276,8 @@ class StripWizardView(QWidget):
             else:
                 self._bedrock_data[name] = {"depth": 0, "vs30": None, "vsavg": None}
 
-        # Auto-detect secondary peaks if auto mode + config
-        if self._chk_auto.isChecked() and self._auto_peak_cfg:
+        # Auto-detect secondary peaks if config is set
+        if self._auto_peak_cfg:
             self._run_auto_detection()
 
         # Populate list
@@ -542,35 +526,120 @@ class StripWizardView(QWidget):
         self._update_list_icon(self._current_idx, False)
         self._redraw_hv()
 
-    def _on_click(self, event):
-        """Handle click on HV plot for peak selection."""
+    def _on_press(self, event):
+        """Record press position for drag-to-select."""
         if event.inaxes is None or not self._steps:
             return
         if not (self._pick_f0 or self._pick_sec):
             return
         if self._hv_plot.toolbar.mode:
             return
+        self._drag_start_x = event.xdata
+
+    def _on_motion(self, event):
+        """Show drag rectangle during click-and-release selection."""
+        if self._drag_start_x is None or event.inaxes is None:
+            return
+        if not (self._pick_f0 or self._pick_sec):
+            return
+
+        ax = event.inaxes
+        # Remove previous rectangle
+        if self._drag_rect is not None:
+            try:
+                self._drag_rect.remove()
+            except ValueError:
+                pass
+            self._drag_rect = None
+
+        x0 = min(self._drag_start_x, event.xdata)
+        x1 = max(self._drag_start_x, event.xdata)
+        color = "red" if self._pick_f0 else "orange"
+        self._drag_rect = ax.axvspan(x0, x1, alpha=0.15, color=color)
+        self._hv_plot.canvas.draw_idle()
+
+    def _on_release(self, event):
+        """Handle release: drag (range) or click (single point)."""
+        if event.inaxes is None or not self._steps:
+            self._drag_start_x = None
+            return
+        if not (self._pick_f0 or self._pick_sec):
+            self._drag_start_x = None
+            return
+        if self._hv_plot.toolbar.mode:
+            self._drag_start_x = None
+            return
 
         step = self._steps[self._current_idx]
         freqs, amps = step.get("freqs"), step.get("amps")
         if freqs is None:
+            self._drag_start_x = None
             return
 
-        cx = event.xdata
-        amp_interp = float(np.interp(cx, freqs, amps))
-        idx = int(np.argmin(np.abs(freqs - cx)))
-        f = float(cx)
-        a = amp_interp
         name = step["name"]
+        DRAG_THRESHOLD = 0.02  # relative to frequency range
 
-        if self._pick_f0:
-            self._peak_data[name]["f0"] = (f, a, idx)
-            self._btn_f0.setChecked(False)
-            self._update_list_icon(self._current_idx, True)
-        elif self._pick_sec:
-            self._peak_data[name].setdefault("secondary", []).append((f, a, idx))
+        if self._drag_start_x is not None:
+            drag_dist = abs(event.xdata - self._drag_start_x)
+            freq_range = freqs[-1] - freqs[0]
+            is_drag = drag_dist > freq_range * DRAG_THRESHOLD
 
-        self._redraw_hv()
+            if is_drag:
+                # Drag: find peak within the selected range
+                x0 = min(self._drag_start_x, event.xdata)
+                x1 = max(self._drag_start_x, event.xdata)
+                mask = (freqs >= x0) & (freqs <= x1)
+                if np.any(mask):
+                    masked = np.where(mask, amps, -np.inf)
+                    idx = int(np.argmax(masked))
+                    f, a = float(freqs[idx]), float(amps[idx])
+                    if self._pick_f0:
+                        self._peak_data[name]["f0"] = (f, a, idx)
+                        self._btn_f0.setChecked(False)
+                        self._update_list_icon(self._current_idx, True)
+                    elif self._pick_sec:
+                        self._peak_data[name].setdefault(
+                            "secondary", []).append((f, a, idx))
+                    self._redraw_hv()
+            else:
+                # Single click: interpolate at clicked position
+                cx = event.xdata
+                amp_interp = float(np.interp(cx, freqs, amps))
+                idx = int(np.argmin(np.abs(freqs - cx)))
+                f, a = float(cx), amp_interp
+
+                if self._pick_f0:
+                    self._peak_data[name]["f0"] = (f, a, idx)
+                    self._btn_f0.setChecked(False)
+                    self._update_list_icon(self._current_idx, True)
+                elif self._pick_sec:
+                    self._peak_data[name].setdefault(
+                        "secondary", []).append((f, a, idx))
+                self._redraw_hv()
+        else:
+            # Fallback single-click (no press recorded)
+            cx = event.xdata
+            amp_interp = float(np.interp(cx, freqs, amps))
+            idx = int(np.argmin(np.abs(freqs - cx)))
+            f, a = float(cx), amp_interp
+
+            if self._pick_f0:
+                self._peak_data[name]["f0"] = (f, a, idx)
+                self._btn_f0.setChecked(False)
+                self._update_list_icon(self._current_idx, True)
+            elif self._pick_sec:
+                self._peak_data[name].setdefault(
+                    "secondary", []).append((f, a, idx))
+            self._redraw_hv()
+
+        # Clean up drag state
+        self._drag_start_x = None
+        if self._drag_rect is not None:
+            try:
+                self._drag_rect.remove()
+            except ValueError:
+                pass
+            self._drag_rect = None
 
     def _update_sel_label(self):
         if not self._steps:
@@ -684,24 +753,6 @@ class StripWizardView(QWidget):
     # ══════════════════════════════════════════════════════════════
     #  AUTO PEAK DETECTION
     # ══════════════════════════════════════════════════════════════
-    def _on_auto_toggled(self, on):
-        self._auto_mode = on
-        if on and self._steps and self._auto_peak_cfg:
-            self._run_auto_detection()
-
-    def _open_peak_settings(self):
-        """Open the AutoPeakSettingsDialog."""
-        try:
-            from ..dialogs.auto_peak_settings_dialog import AutoPeakSettingsDialog
-            dlg = AutoPeakSettingsDialog(self._auto_peak_cfg, parent=self)
-            if dlg.exec_():
-                self._auto_peak_cfg = dlg.get_config()
-                if self._chk_auto.isChecked() and self._steps:
-                    self._run_auto_detection()
-        except ImportError:
-            QMessageBox.warning(self, "Settings",
-                                "AutoPeakSettingsDialog not available")
-
     def _run_auto_detection(self):
         """Run auto peak detection on all steps using cfg."""
         cfg = self._auto_peak_cfg or {}
