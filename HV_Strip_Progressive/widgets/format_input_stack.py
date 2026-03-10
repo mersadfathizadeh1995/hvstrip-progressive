@@ -172,7 +172,8 @@ class _EditorPage(QWidget):
             "Model Files (*.txt *.csv);;All Files (*)")
         if path:
             try:
-                from ..core.soil_profile import SoilProfile                profile = SoilProfile.from_auto(path)
+                from ..core.soil_profile import SoilProfile
+                profile = SoilProfile.from_auto(path)
                 if self._table and hasattr(self._table, 'set_profile'):
                     self._table.set_profile(profile)
                 self.profile_changed.emit(profile)

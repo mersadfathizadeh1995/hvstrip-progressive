@@ -829,6 +829,11 @@ class HVStripWindow(QMainWindow):
             return canvas.widget(tab_index)
         return None
 
+    def get_panel(self, mode=None):
+        """Return the left-panel widget for the given mode."""
+        mode = mode or self._active_mode
+        return self._panels.get(mode)
+
     def get_data_input(self, mode=None):
         """Return the Data Input view (tab index 0) for the given mode."""
         mode = mode or self._active_mode

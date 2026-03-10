@@ -22,13 +22,6 @@ from ..widgets.collapsible_group import CollapsibleGroupBox
 
 ENGINES = ["diffuse_field", "sh_wave", "ellipticity"]
 
-FIGURE_SIZES = {
-    "Standard (10×7)": (10, 7),
-    "Large (14×10)": (14, 10),
-    "Publication (12×8)": (12, 8),
-    "Wide (16×6)": (16, 6),
-}
-
 
 class ForwardSinglePanel(QWidget):
     """Left-panel content for Forward → Single sub-tab."""
@@ -156,36 +149,7 @@ class ForwardSinglePanel(QWidget):
         lay.addWidget(auto_grp)
 
         # ── Export Settings ────────────────────────────────────
-        export_grp = CollapsibleGroupBox(
-            f"{EMOJI['save']} Export Settings", collapsed=True)
-        export_lay = QVBoxLayout()
-        export_lay.setSpacing(2)
-
-        exp_row = QHBoxLayout()
-        exp_row.addWidget(QLabel("DPI:"))
-        self._dpi = QSpinBox()
-        self._dpi.setRange(72, 600)
-        self._dpi.setValue(150)
-        self._dpi.setMaximumWidth(65)
-        exp_row.addWidget(self._dpi)
-
-        exp_row.addWidget(QLabel("Fmt:"))
-        self._export_fmt = QComboBox()
-        self._export_fmt.addItems(["PNG", "PDF", "SVG"])
-        self._export_fmt.setMaximumWidth(65)
-        exp_row.addWidget(self._export_fmt)
-        exp_row.addStretch()
-        export_lay.addLayout(exp_row)
-
-        size_row = QHBoxLayout()
-        size_row.addWidget(QLabel("Size:"))
-        self._fig_size = QComboBox()
-        self._fig_size.addItems(list(FIGURE_SIZES.keys()))
-        size_row.addWidget(self._fig_size, 1)
-        export_lay.addLayout(size_row)
-
-        export_grp.setContentLayout(export_lay)
-        lay.addWidget(export_grp)
+        # (Moved to HV Curve View's collapsible Plot Settings)
 
         # ── Run ────────────────────────────────────────────────
         self._btn_run = QPushButton(f"{EMOJI['run']} Compute HV Curve")
@@ -202,23 +166,6 @@ class ForwardSinglePanel(QWidget):
         self._result_label.setStyleSheet(SECONDARY_LABEL)
         self._result_label.setWordWrap(True)
         lay.addWidget(self._result_label)
-
-        # Save buttons
-        btn_row = QHBoxLayout()
-        self._btn_save = QPushButton(f"{EMOJI['save']} Save CSV")
-        self._btn_save.setEnabled(False)
-        self._btn_save.clicked.connect(self._save_csv)
-        btn_row.addWidget(self._btn_save)
-
-        self._btn_save_all = QPushButton(f"{EMOJI['save']} Save All")
-        self._btn_save_all.setStyleSheet(BUTTON_SUCCESS)
-        self._btn_save_all.setEnabled(False)
-        self._btn_save_all.setToolTip(
-            "Save HV curve figure, Vs profile figure,\n"
-            "peak info, Vs30 info, and CSV data.")
-        self._btn_save_all.clicked.connect(self._save_all)
-        btn_row.addWidget(self._btn_save_all)
-        lay.addLayout(btn_row)
 
         lay.addStretch()
         scroll.setWidget(content)
@@ -352,8 +299,6 @@ class ForwardSinglePanel(QWidget):
             pass
         self._btn_run.setEnabled(True)
         self._progress.setVisible(False)
-        self._btn_save.setEnabled(True)
-        self._btn_save_all.setEnabled(True)
 
         freqs, amps = result
         self._last_freqs = freqs
@@ -501,191 +446,6 @@ class ForwardSinglePanel(QWidget):
         cfg["fmax"] = self._fmax.value()
         cfg["nf"] = self._nf.value()
         return cfg
-
-    def _save_csv(self):
-        """Save HV curve CSV only."""
-        if not hasattr(self, '_last_freqs'):
-            return
-        d = self._out_dir.text().strip()
-        if not d:
-            d = QFileDialog.getExistingDirectory(self, "Save Results To")
-        if not d:
-            return
-        out = Path(d)
-        out.mkdir(parents=True, exist_ok=True)
-        np.savetxt(out / "hv_curve.csv",
-                   np.column_stack([self._last_freqs, self._last_amps]),
-                   delimiter=",", header="frequency,amplitude", comments="")
-        self._result_label.setText(f"CSV saved to {out}")
-        if self._mw:
-            self._mw.log(f"HV curve CSV saved to {out}")
-
-    def _save_all(self):
-        """Save comprehensive outputs: figures, CSV, peak info, Vs data."""
-        if not hasattr(self, '_last_freqs'):
-            return
-        d = self._out_dir.text().strip()
-        if not d:
-            d = QFileDialog.getExistingDirectory(self, "Save All Results To")
-        if not d:
-            return
-
-        out = Path(d)
-        out.mkdir(parents=True, exist_ok=True)
-        dpi = self._dpi.value()
-        fmt = self._export_fmt.currentText().lower()
-        fig_key = self._fig_size.currentText()
-        figsize = FIGURE_SIZES.get(fig_key, (12, 8))
-
-        # 1. HV curve CSV
-        np.savetxt(out / "hv_curve.csv",
-                   np.column_stack([self._last_freqs, self._last_amps]),
-                   delimiter=",", header="frequency,amplitude", comments="")
-
-        # 2. Peak info
-        f0 = getattr(self, "_last_f0", None)
-        sec = getattr(self, "_last_secondary", [])
-        if f0:
-            with open(out / "peak_info.txt", "w") as fh:
-                fh.write(f"f0_Frequency_Hz,{f0[0]:.6f}\n")
-                fh.write(f"f0_Amplitude,{f0[1]:.6f}\n")
-                fh.write(f"f0_Index,{f0[2]}\n")
-                for j, s in enumerate(sec):
-                    fh.write(f"Secondary_{j+1}_Frequency_Hz,{s[0]:.6f}\n")
-                    fh.write(f"Secondary_{j+1}_Amplitude,{s[1]:.6f}\n")
-                    fh.write(f"Secondary_{j+1}_Index,{s[2]}\n")
-
-        # 3. HV forward curve figure
-        self._save_hv_figure(out, figsize, dpi, fmt)
-
-        # 4. Vs profile outputs (figure + CSV + Vs30 info)
-        di = self._get_data_input()
-        profile = di.get_profile() if di else self._loaded_profile
-        if profile:
-            self._save_vs_outputs(profile, out, dpi)
-
-        self._result_label.setText(f"All saved to {out}")
-        self._result_label.setStyleSheet("color: green; font-size: 11px;")
-        if self._mw:
-            self._mw.log(f"Full results saved to {out}")
-
-    def _save_hv_figure(self, out_dir, figsize, dpi, fmt):
-        """Save publication-quality HV forward curve figure."""
-        try:
-            from matplotlib.figure import Figure
-            import matplotlib.pyplot as plt
-
-            fig = Figure(figsize=figsize)
-            ax = fig.add_subplot(111)
-            ax.plot(self._last_freqs, self._last_amps,
-                    color="royalblue", lw=2.0, label="H/V Ratio")
-            ax.set_xscale("log")
-            ax.set_xlabel("Frequency (Hz)", fontsize=11)
-            ax.set_ylabel("H/V Amplitude Ratio", fontsize=11)
-            ax.set_title("HV Forward Model", fontsize=13, fontweight="bold")
-            ax.grid(True, alpha=0.3, which="both")
-
-            f0 = getattr(self, "_last_f0", None)
-            if f0:
-                ax.plot(f0[0], f0[1], "*", color="firebrick", ms=16,
-                        zorder=10, markeredgecolor="darkred",
-                        markeredgewidth=0.8,
-                        label=f"f0 = {f0[0]:.2f} Hz")
-                ax.axvline(f0[0], color="firebrick", ls="--",
-                           lw=0.9, alpha=0.4)
-            for j, s in enumerate(getattr(self, "_last_secondary", [])):
-                colors = ["green", "purple", "orange", "brown", "teal"]
-                c = colors[j % len(colors)]
-                ax.plot(s[0], s[1], "*", color=c, ms=13, zorder=9,
-                        markeredgecolor="black", markeredgewidth=0.5,
-                        label=f"Sec.{j+1} ({s[0]:.2f} Hz)")
-                ax.axvline(s[0], color=c, ls=":", lw=0.8, alpha=0.4)
-
-            ax.legend(fontsize=10, loc="upper right", framealpha=0.9)
-            fig.tight_layout()
-            fig.savefig(out_dir / f"hv_forward_curve.{fmt}", dpi=dpi)
-            if fmt != "pdf":
-                fig.savefig(out_dir / "hv_forward_curve.pdf")
-            plt.close(fig)
-        except Exception as e:
-            if self._mw:
-                self._mw.log(f"HV figure save error: {e}")
-
-    def _save_vs_outputs(self, profile, out_dir, dpi):
-        """Save Vs profile figure, CSV, and Vs30 info."""
-        try:
-            from matplotlib.figure import Figure
-            import matplotlib.pyplot as plt
-
-            finite = [L for L in profile.layers if not L.is_halfspace]
-            hs = [L for L in profile.layers if L.is_halfspace]
-
-            # Vs profile CSV
-            with open(out_dir / "vs_profile.csv", "w") as fh:
-                fh.write("depth_top_m,depth_bot_m,thickness_m,"
-                         "vs_m_s,vp_m_s,density_kg_m3\n")
-                z = 0.0
-                for L in finite:
-                    fh.write(f"{z:.2f},{z + L.thickness:.2f},{L.thickness:.2f},"
-                             f"{L.vs:.2f},{L.vp:.2f},{L.density:.2f}\n")
-                    z += L.thickness
-                if hs:
-                    L = hs[0]
-                    fh.write(f"{z:.2f},inf,inf,"
-                             f"{L.vs:.2f},{L.vp:.2f},{L.density:.2f}\n")
-
-            # Vs profile figure
-            fig = Figure(figsize=(5, 7))
-            ax = fig.add_subplot(111)
-            depths, vs = [], []
-            z = 0.0
-            for L in finite:
-                depths.append(z); vs.append(L.vs)
-                z += L.thickness
-                depths.append(z); vs.append(L.vs)
-            total = z
-            if hs:
-                hd = total * 0.25
-                depths.append(z); vs.append(hs[0].vs)
-                z += hd
-                depths.append(z); vs.append(hs[0].vs)
-
-            ax.plot(vs, depths, color="teal", lw=1.8)
-            ax.fill_betweenx(depths, 0, vs, alpha=0.1, color="teal")
-            ax.invert_yaxis()
-            ax.set_xlabel("Vs (m/s)", fontsize=10)
-            ax.set_ylabel("Depth (m)", fontsize=10)
-            ax.set_title("Vs Profile", fontsize=11, fontweight="bold")
-            ax.grid(True, alpha=0.3)
-
-            # Vs30
-            try:
-                from ..core.vs_average import vs_average_from_profile
-                res30 = vs_average_from_profile(profile, target_depth=30.0)
-                ax.axhline(30.0, color="blue", lw=0.8, ls="-.", alpha=0.6)
-                vs_max = max(vs) if vs else 500
-                ax.annotate(
-                    f"Vs30 = {res30.vs_avg:.0f} m/s",
-                    xy=(vs_max * 0.5, 30.0),
-                    xytext=(0, -10), textcoords="offset points",
-                    fontsize=8, color="blue", fontweight="bold")
-
-                # Vs30 info file
-                with open(out_dir / "vs30_info.txt", "w") as fh:
-                    fh.write(f"Vs30_m_per_s,{res30.vs_avg:.2f}\n")
-                    fh.write(f"Target_Depth_m,{res30.target_depth:.1f}\n")
-                    fh.write(f"Actual_Depth_m,{res30.actual_depth:.1f}\n")
-                    fh.write(f"Extrapolated,{res30.extrapolated}\n")
-            except Exception:
-                pass
-
-            fig.tight_layout()
-            fig.savefig(out_dir / "vs_profile.png", dpi=dpi)
-            fig.savefig(out_dir / "vs_profile.pdf")
-            plt.close(fig)
-        except Exception as e:
-            if self._mw:
-                self._mw.log(f"Vs output save error: {e}")
 
     # ── Public API ─────────────────────────────────────────────
     def get_engine_name(self):
