@@ -408,13 +408,8 @@ class HVStripWindow(QMainWindow):
             ],
             MODE_STRIP_SINGLE: [
                 ("data_input_single", f"{EMOJI['file']} Data Input"),
-                ("hv_curve", f"{EMOJI['forward']} HV Curve"),
-                ("vs_profile", f"{EMOJI['profile']} Vs Profile"),
-                ("hv_overlay", f"{EMOJI['chart']} HV Overlay"),
-                ("peak_evolution", f"{EMOJI['peak']} Peak Evolution"),
-                ("strip_results", f"{EMOJI['report']} Results"),
-                ("figure_studio", f"{EMOJI['figures']} Figure Studio"),
-                ("dual_resonance", f"{EMOJI['dual']} Dual-Resonance"),
+                ("strip_wizard", f"{EMOJI['forward']} HV Strip Wizard"),
+                ("figure_studio_view", f"{EMOJI['figures']} Figure Studio"),
             ],
             MODE_STRIP_BATCH: [
                 ("data_input_batch", f"{EMOJI['file']} Data Input"),
@@ -465,6 +460,8 @@ class HVStripWindow(QMainWindow):
             "summary_table": (".views.summary_table_view", "SummaryTableView"),
             "profile_wizard": (".views.profile_wizard_view", "ProfileWizardView"),
             "all_profiles": (".views.all_profiles_view", "AllProfilesView"),
+            "strip_wizard": (".views.strip_wizard_view", "StripWizardView"),
+            "figure_studio_view": (".views.figure_studio_view", "FigureStudioView"),
         }
         # Some tab_ids re-use existing views
         if tab_id in ("current_profile",):
@@ -536,6 +533,20 @@ class HVStripWindow(QMainWindow):
 
         self._summary_dock.visibilityChanged.connect(self._on_summary_dock_vis)
 
+        # Strip summary dock (for MODE_STRIP_SINGLE)
+        try:
+            from .widgets.strip_summary_dock import StripSummaryDock
+            self._strip_summary_dock = StripSummaryDock(self)
+        except Exception as e:
+            print(f"[HVStrip] StripSummaryDock error: {e}")
+            self._strip_summary_dock = QDockWidget("Strip Results", self)
+            self._strip_summary_dock.setWidget(
+                self._placeholder("Strip Results"))
+
+        self.addDockWidget(Qt.RightDockWidgetArea, self._strip_summary_dock)
+        self.tabifyDockWidget(self._summary_dock, self._strip_summary_dock)
+        self._strip_summary_dock.setVisible(False)
+
     def _on_summary_dock_vis(self, visible):
         if hasattr(self, '_act_summary'):
             self._act_summary.blockSignals(True)
@@ -549,9 +560,13 @@ class HVStripWindow(QMainWindow):
         """Toggle all right docks visible/hidden."""
         log_vis = self._log_dock.isVisible()
         sum_vis = self._summary_dock.isVisible()
-        if log_vis or sum_vis:
+        strip_vis = getattr(self, '_strip_summary_dock', None) and \
+            self._strip_summary_dock.isVisible()
+        if log_vis or sum_vis or strip_vis:
             self._log_dock.setVisible(False)
             self._summary_dock.setVisible(False)
+            if hasattr(self, '_strip_summary_dock'):
+                self._strip_summary_dock.setVisible(False)
             self._btn_toggle_dock.setText("◀")
             self._btn_toggle_dock.setToolTip("Expand right panels")
         else:
@@ -843,6 +858,30 @@ class HVStripWindow(QMainWindow):
         """Return the summary dock widget."""
         return getattr(self, '_summary_dock', None)
 
+    def get_strip_summary_dock(self):
+        """Return the strip summary dock widget."""
+        return getattr(self, '_strip_summary_dock', None)
+
+    def get_strip_wizard(self):
+        """Return the StripWizardView if active."""
+        canvas = self._canvas_stacks.get(self._active_mode)
+        if canvas:
+            for i in range(canvas.count()):
+                w = canvas.widget(i)
+                if type(w).__name__ == "StripWizardView":
+                    return w
+        return None
+
+    def get_figure_studio(self):
+        """Return the FigureStudioView if active."""
+        canvas = self._canvas_stacks.get(self._active_mode)
+        if canvas:
+            for i in range(canvas.count()):
+                w = canvas.widget(i)
+                if type(w).__name__ == "FigureStudioView":
+                    return w
+        return None
+
     def update_hv_curve(self, freqs, amps, profile=None):
         """Push forward-model result to the active HV Curve view."""
         canvas = self._canvas_stacks.get(self._active_mode)
@@ -874,12 +913,35 @@ class HVStripWindow(QMainWindow):
                     break
 
     def update_strip_results(self, result_dict):
-        """Push result summary to the results table view."""
+        """Push results to the strip summary dock + wizard + figure studio."""
+        # Update strip summary dock
+        dock = self.get_strip_summary_dock()
+        if dock and hasattr(dock, 'set_results'):
+            dock.set_results(result_dict)
+            dock.setVisible(True)
+            dock.raise_()
+
+        # Update wizard with step data
+        wiz = self.get_strip_wizard()
+        if wiz and hasattr(wiz, 'set_strip_results'):
+            wiz.set_strip_results(result_dict)
+
+        # Update figure studio with strip dir
+        strip_dir = result_dict.get("strip_directory")
+        if strip_dir:
+            fs = self.get_figure_studio()
+            if fs and hasattr(fs, 'set_strip_data'):
+                has_dr = self._config.get(
+                    "dual_resonance", {}).get("enable", False)
+                fs.set_strip_data(strip_dir,
+                                  has_dual_resonance=has_dr)
+
+        # Fallback: still push to any view that accepts set_results
         canvas = self._canvas_stacks.get(self._active_mode)
         if canvas:
             for i in range(canvas.count()):
                 w = canvas.widget(i)
-                if hasattr(w, 'set_results'):
+                if hasattr(w, 'set_results') and w is not wiz:
                     w.set_results(result_dict)
                     break
 

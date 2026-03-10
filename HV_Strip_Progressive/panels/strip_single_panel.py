@@ -1,8 +1,8 @@
 """Strip Single Panel — settings and run for single profile HV stripping.
 
 Data loading is handled by the Data Input canvas tab.
-This panel contains: engine, frequency, peak detection, dual-resonance,
-output dir, report/interactive options, Run button.
+Peak detection and dual-resonance settings are now in the HV Strip Wizard.
+This panel contains: engine, frequency, output dir, report option, Run button.
 """
 from pathlib import Path
 
@@ -19,10 +19,6 @@ from ..widgets.style_constants import (
 from ..widgets.collapsible_group import CollapsibleGroupBox
 
 ENGINES = ["diffuse_field", "sh_wave", "ellipticity"]
-
-PEAK_PRESETS = ["default", "sesame", "custom"]
-PEAK_METHODS = ["find_peaks", "argmax"]
-PEAK_SELECTIONS = ["leftmost", "highest", "global_max"]
 
 
 class StripSinglePanel(QWidget):
@@ -82,70 +78,12 @@ class StripSinglePanel(QWidget):
         freq_row.addWidget(self._nf)
         settings_lay.addLayout(freq_row)
 
+        # Dual-resonance toggle (simple on/off, details in wizard)
+        self._chk_dr = QCheckBox("Enable dual-resonance analysis")
+        settings_lay.addWidget(self._chk_dr)
+
         settings_grp.setContentLayout(settings_lay)
         lay.addWidget(settings_grp)
-
-        # ── Peak Detection ─────────────────────────────────────
-        peak_grp = CollapsibleGroupBox(f"{EMOJI['peak']} Peak Detection")
-        peak_lay = QVBoxLayout()
-
-        preset_row = QHBoxLayout()
-        preset_row.addWidget(QLabel("Preset:"))
-        self._peak_preset = QComboBox()
-        self._peak_preset.addItems(PEAK_PRESETS)
-        preset_row.addWidget(self._peak_preset, 1)
-        peak_lay.addLayout(preset_row)
-
-        method_row = QHBoxLayout()
-        method_row.addWidget(QLabel("Method:"))
-        self._peak_method = QComboBox()
-        self._peak_method.addItems(PEAK_METHODS)
-        method_row.addWidget(self._peak_method, 1)
-        method_row.addWidget(QLabel("Select:"))
-        self._peak_select = QComboBox()
-        self._peak_select.addItems(PEAK_SELECTIONS)
-        method_row.addWidget(self._peak_select, 1)
-        peak_lay.addLayout(method_row)
-
-        prom_row = QHBoxLayout()
-        prom_row.addWidget(QLabel("Min Prominence:"))
-        self._min_prom = QDoubleSpinBox()
-        self._min_prom.setRange(0.0, 10.0)
-        self._min_prom.setValue(0.1)
-        self._min_prom.setSingleStep(0.05)
-        self._min_prom.setDecimals(3)
-        prom_row.addWidget(self._min_prom)
-        prom_row.addStretch()
-        peak_lay.addLayout(prom_row)
-
-        peak_grp.setContentLayout(peak_lay)
-        lay.addWidget(peak_grp)
-
-        # ── Dual-Resonance ─────────────────────────────────────
-        dr_grp = CollapsibleGroupBox(
-            f"{EMOJI['dual']} Dual-Resonance", collapsed=True)
-        dr_lay = QVBoxLayout()
-
-        self._chk_dr = QCheckBox("Enable dual-resonance analysis")
-        dr_lay.addWidget(self._chk_dr)
-
-        dr_params = QHBoxLayout()
-        dr_params.addWidget(QLabel("Ratio thresh:"))
-        self._dr_ratio = QDoubleSpinBox()
-        self._dr_ratio.setRange(0.5, 5.0)
-        self._dr_ratio.setValue(1.2)
-        self._dr_ratio.setSingleStep(0.1)
-        dr_params.addWidget(self._dr_ratio)
-        dr_params.addWidget(QLabel("Shift thresh:"))
-        self._dr_shift = QDoubleSpinBox()
-        self._dr_shift.setRange(0.0, 2.0)
-        self._dr_shift.setValue(0.3)
-        self._dr_shift.setSingleStep(0.05)
-        dr_params.addWidget(self._dr_shift)
-        dr_lay.addLayout(dr_params)
-
-        dr_grp.setContentLayout(dr_lay)
-        lay.addWidget(dr_grp)
 
         # ── Output ─────────────────────────────────────────────
         out_row = QHBoxLayout()
@@ -163,9 +101,6 @@ class StripSinglePanel(QWidget):
         self._chk_report = QCheckBox("Generate comprehensive report")
         self._chk_report.setChecked(True)
         lay.addWidget(self._chk_report)
-
-        self._chk_interactive = QCheckBox("Interactive peak selection")
-        lay.addWidget(self._chk_interactive)
 
         # ── Run ────────────────────────────────────────────────
         run_row = QHBoxLayout()
@@ -210,14 +145,8 @@ class StripSinglePanel(QWidget):
         self._fmin.setValue(fwd.get("fmin", 0.2))
         self._fmax.setValue(fwd.get("fmax", 20.0))
         self._nf.setValue(fwd.get("nf", 71))
-        pd = cfg.get("peak_detection", {})
-        idx = self._peak_preset.findText(pd.get("preset", "default"))
-        if idx >= 0:
-            self._peak_preset.setCurrentIndex(idx)
         dr = cfg.get("dual_resonance", {})
         self._chk_dr.setChecked(dr.get("enable", False))
-        self._dr_ratio.setValue(dr.get("separation_ratio_threshold", 1.2))
-        self._dr_shift.setValue(dr.get("separation_shift_threshold", 0.3))
 
     def _get_data_input(self):
         """Get the DataInputView from the canvas."""
@@ -303,14 +232,13 @@ class StripSinglePanel(QWidget):
 
         if self._mw:
             self._mw.set_result(result)
-            strip_dir = result.get("strip_directory")
-            if strip_dir:
-                self._mw.update_overlay(strip_dir)
             self._mw.update_strip_results(result)
             self._mw.log(f"Stripping done: {n_steps} steps")
 
-            if self._chk_interactive.isChecked():
-                self._mw._on_open_peak_picker()
+            # Switch to wizard tab (index 1)
+            canvas = self._mw._canvas_stacks.get(self._mw._active_mode)
+            if canvas and canvas.count() >= 2:
+                canvas.setCurrentIndex(1)
 
     def _on_strip_error(self, err_msg, tmp_path):
         import os
@@ -343,17 +271,9 @@ class StripSinglePanel(QWidget):
         cfg = {
             "engine_name": engine_name,
             "generate_report": self._chk_report.isChecked(),
-            "interactive_mode": self._chk_interactive.isChecked(),
-            "peak_detection": {
-                "preset": self._peak_preset.currentText(),
-                "method": self._peak_method.currentText(),
-                "select": self._peak_select.currentText(),
-                "min_prominence": self._min_prom.value(),
-            },
+            "interactive_mode": False,  # Wizard handles interactivity now
             "dual_resonance": {
                 "enable": self._chk_dr.isChecked(),
-                "separation_ratio_threshold": self._dr_ratio.value(),
-                "separation_shift_threshold": self._dr_shift.value(),
             },
             "hv_forward": {
                 "fmin": self._fmin.value(),
