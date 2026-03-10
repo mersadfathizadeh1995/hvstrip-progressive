@@ -7,7 +7,10 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
-import seaborn as sns
+try:
+    import seaborn as sns
+except ImportError:
+    sns = None
 
 
 class HVSRPlotter:
@@ -28,13 +31,16 @@ class HVSRPlotter:
     def _setup_style(self):
         """Configure plotting style."""
         if self.style == 'publication':
-            sns.set_style("whitegrid")
+            if sns is not None:
+                sns.set_style("whitegrid")
             self.figsize = (8, 6)
         elif self.style == 'presentation':
-            sns.set_style("darkgrid") 
+            if sns is not None:
+                sns.set_style("darkgrid")
             self.figsize = (12, 8)
         else:  # minimal
-            sns.set_style("white")
+            if sns is not None:
+                sns.set_style("white")
             self.figsize = (6, 4)
     
     def plot_multiple_curves(self, curves_data: Dict[str, Tuple[np.ndarray, np.ndarray]],

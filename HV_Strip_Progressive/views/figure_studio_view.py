@@ -296,12 +296,19 @@ class FigureStudioView(QWidget):
             return c
 
         def _add_annotation_controls(controls, form_layout):
-            """Add show_annotations checkbox + annotation_size spinner."""
+            """Add show_annotations checkbox + annotation_size + offset + auto-arrange."""
             controls["show_annotations"] = QCheckBox()
             controls["show_annotations"].setChecked(True)
             form_layout.addRow("Peak Labels:", controls["show_annotations"])
             controls["annotation_size"] = _spin_int(5, 18, 8)
             form_layout.addRow("Label Size:", controls["annotation_size"])
+            controls["annotation_offset_x"] = _spin_int(-30, 30, 6)
+            form_layout.addRow("Label Offset X:", controls["annotation_offset_x"])
+            controls["annotation_offset_y"] = _spin_int(-30, 30, 6)
+            form_layout.addRow("Label Offset Y:", controls["annotation_offset_y"])
+            controls["auto_arrange_labels"] = QCheckBox()
+            controls["auto_arrange_labels"].setChecked(True)
+            form_layout.addRow("Auto-Arrange:", controls["auto_arrange_labels"])
 
         # Store controls on the widget for retrieval
         w._controls = {}

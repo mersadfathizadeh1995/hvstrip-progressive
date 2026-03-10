@@ -3,6 +3,8 @@
 Displays a step-by-step table with peak frequencies, Vs30, VsAvg,
 bedrock depth, and status.  Includes summary statistics and CSV export.
 """
+import re
+
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
@@ -17,6 +19,12 @@ COLUMNS = [
     "Step", "Layers", "f0 (Hz)", "Amp", "Vs30", "VsAvg",
     "Bedrock (m)", "Status",
 ]
+
+
+def _natural_sort_key(s):
+    """Sort key that orders 'Step0', 'Step1', ..., 'Step10' numerically."""
+    return [int(c) if c.isdigit() else c.lower()
+            for c in re.split(r'(\d+)', s)]
 
 
 class StripSummaryDock(QDockWidget):
@@ -94,7 +102,7 @@ class StripSummaryDock(QDockWidget):
     # ── Table population ──────────────────────────────────────
     def _populate_table(self):
         step_results = self._result.get("step_results", {})
-        names = sorted(step_results.keys())
+        names = sorted(step_results.keys(), key=_natural_sort_key)
         self._table.setRowCount(len(names))
 
         for i, name in enumerate(names):
@@ -155,7 +163,7 @@ class StripSummaryDock(QDockWidget):
 
         # Collect frequencies (from peak_data first, then step_results)
         freqs, vs30_vals = [], []
-        for name in sorted(sr.keys()):
+        for name in sorted(sr.keys(), key=_natural_sort_key):
             pk = self._peak_data.get(name, {})
             f0 = pk.get("f0")
             if isinstance(f0, tuple):

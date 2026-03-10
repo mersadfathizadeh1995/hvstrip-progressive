@@ -43,6 +43,39 @@ plt.rcParams.update({
 })
 
 
+def _spread_annotations(annotations, min_gap_pts=14):
+    """Nudge annotation offsets so labels don't overlap.
+
+    *annotations* is a list of matplotlib ``Annotation`` objects that all
+    use ``textcoords='offset points'``.  The function sorts them by their
+    data-y coordinate and shifts each one whose offset point would be too
+    close to a neighbour by alternating the text to above/below the data
+    point.
+
+    Parameters
+    ----------
+    annotations : list[matplotlib.text.Annotation]
+    min_gap_pts : int
+        Minimum vertical separation (in offset-points) between two labels.
+    """
+    if len(annotations) < 2:
+        return
+    # Sort by data-y (second element of xy) so we process bottom-to-top
+    annotations.sort(key=lambda a: a.xy[1])
+    for i in range(1, len(annotations)):
+        prev = annotations[i - 1]
+        curr = annotations[i]
+        px, py = prev.xyann  # current offset
+        cx, cy = curr.xyann
+        # Rough overlap check: compare data-y + text offset
+        prev_y = prev.xy[1] + py
+        curr_y = curr.xy[1] + cy
+        if abs(curr_y - prev_y) < min_gap_pts * 0.5:
+            # Alternate: push current one above, previous below
+            curr.xyann = (cx, abs(cy) + min_gap_pts)
+            prev.xyann = (px, -(abs(py) + min_gap_pts))
+
+
 class ProgressiveStrippingReporter:
     """Generate comprehensive reports from progressive layer stripping analysis."""
     
@@ -781,6 +814,10 @@ class ProgressiveStrippingReporter:
         marker_size = kw.get("marker_size", 8)
         show_annot = kw.get("show_annotations", True)
         annot_size = kw.get("annotation_size", max(font - 2, 6))
+        off_x = kw.get("annotation_offset_x", 6)
+        off_y = kw.get("annotation_offset_y", 6)
+        auto_arrange = kw.get("auto_arrange_labels", True)
+        _annots = []
         for i, sd in enumerate(self.step_data):
             hv = sd['hv_data']
             freqs, amps = hv.get('frequencies', []), hv.get('amplitudes', [])
@@ -796,13 +833,17 @@ class ProgressiveStrippingReporter:
                     ax.scatter(pf, pa, color=colors[i], s=marker_size * 10,
                                edgecolors='white', linewidth=1, zorder=5)
                     if show_annot:
-                        ax.annotate(
+                        ann = ax.annotate(
                             f"{pf:.2f} Hz\n{pa:.1f}",
                             (pf, pa), fontsize=annot_size,
-                            xytext=(6, 6), textcoords='offset points',
+                            xytext=(off_x, off_y),
+                            textcoords='offset points',
                             ha='left', va='bottom',
                             bbox=dict(boxstyle='round,pad=0.2',
                                       fc='white', alpha=0.7, lw=0.5))
+                        _annots.append(ann)
+        if auto_arrange and _annots:
+            _spread_annotations(_annots)
 
         if log_x:
             ax.set_xscale('log')
@@ -896,6 +937,10 @@ class ProgressiveStrippingReporter:
         contrasts = self.analysis.get('interface_contrasts', [])
         font = kw.get("font_size", 11)
         grid = kw.get("grid", True)
+        show_annot = kw.get("show_annotations", True)
+        off_x = kw.get("annotation_offset_x", 5)
+        off_y = kw.get("annotation_offset_y", 0)
+        auto_arrange = kw.get("auto_arrange_labels", True)
         ms = kw.get("marker_size", 8)
         lw = kw.get("linewidth", 2)
         af = kw.get("annot_font", font)
@@ -918,18 +963,30 @@ class ProgressiveStrippingReporter:
             ax1.set_xlabel('Impedance Contrast', fontsize=font, weight='bold')
             ax1.set_ylabel('Depth (m)', fontsize=font, weight='bold')
             ax1.set_title('Impedance vs Depth', fontsize=font + 1, weight='bold')
-            for d, imp in zip(depths, imps):
-                ax1.annotate(f"{imp:.2f}", (imp, d), fontsize=af,
-                             xytext=(5, 0), textcoords='offset points')
+            if show_annot:
+                _annots_i1 = []
+                for d, imp in zip(depths, imps):
+                    ann = ax1.annotate(f"{imp:.2f}", (imp, d), fontsize=af,
+                                 xytext=(off_x, off_y),
+                                 textcoords='offset points')
+                    _annots_i1.append(ann)
+                if auto_arrange:
+                    _spread_annotations(_annots_i1)
 
             ax2.plot(vsc, depths, '-o', color='#8E44AD', lw=lw, ms=ms)
             ax2.invert_yaxis()
             ax2.set_xlabel('Vs Contrast', fontsize=font, weight='bold')
             ax2.set_ylabel('Depth (m)', fontsize=font, weight='bold')
             ax2.set_title('Vs Contrast vs Depth', fontsize=font + 1, weight='bold')
-            for d, v in zip(depths, vsc):
-                ax2.annotate(f"{v:.2f}", (v, d), fontsize=af,
-                             xytext=(5, 0), textcoords='offset points')
+            if show_annot:
+                _annots_i2 = []
+                for d, v in zip(depths, vsc):
+                    ann = ax2.annotate(f"{v:.2f}", (v, d), fontsize=af,
+                                 xytext=(off_x, off_y),
+                                 textcoords='offset points')
+                    _annots_i2.append(ann)
+                if auto_arrange:
+                    _spread_annotations(_annots_i2)
 
         for ax in (ax1, ax2):
             if grid:
@@ -1022,6 +1079,9 @@ class ProgressiveStrippingReporter:
         alpha = kw.get("alpha", 0.85)
         show_annot = kw.get("show_annotations", True)
         annot_size = kw.get("annotation_size", max(font - 1, 6))
+        off_x = kw.get("annotation_offset_x", 4)
+        off_y = kw.get("annotation_offset_y", 4)
+        auto_arrange = kw.get("auto_arrange_labels", True)
 
         n_steps = len(self.step_data)
         try:
@@ -1036,6 +1096,7 @@ class ProgressiveStrippingReporter:
         ax4 = fig.add_subplot(2, 2, 4)
 
         # (a) HV curves — first, mid, last
+        _annots_a = []
         indices = [0, len(self.step_data) // 2, len(self.step_data) - 1]
         for ci, si in enumerate(indices):
             if si < len(self.step_data):
@@ -1053,9 +1114,13 @@ class ProgressiveStrippingReporter:
                             ax1.scatter(pf, pa, color=cmap_colors[si],
                                         s=50, edgecolors='white', lw=1,
                                         zorder=5)
-                            ax1.annotate(
+                            ann = ax1.annotate(
                                 f"{pf:.2f}", (pf, pa), fontsize=annot_size,
-                                xytext=(4, 4), textcoords='offset points')
+                                xytext=(off_x, off_y),
+                                textcoords='offset points')
+                            _annots_a.append(ann)
+        if auto_arrange and _annots_a:
+            _spread_annotations(_annots_a)
         ax1.set_xlabel('Frequency (Hz)', fontsize=font)
         ax1.set_ylabel('H/V Amplitude', fontsize=font)
         ax1.set_title('(a) HVSR Evolution', fontweight='bold', fontsize=font)
@@ -1071,9 +1136,14 @@ class ProgressiveStrippingReporter:
         ax2.plot(step_nums, peak_freqs, 'o-', color=cmap_colors[n_steps // 2],
                  lw=lw, ms=6, alpha=alpha)
         if show_annot:
+            _annots_b = []
             for s, pf in zip(step_nums, peak_freqs):
-                ax2.annotate(f"{pf:.2f}", (s, pf), fontsize=annot_size,
-                             xytext=(3, 4), textcoords='offset points')
+                ann = ax2.annotate(f"{pf:.2f}", (s, pf), fontsize=annot_size,
+                             xytext=(off_x, off_y),
+                             textcoords='offset points')
+                _annots_b.append(ann)
+            if auto_arrange:
+                _spread_annotations(_annots_b)
         ax2.set_xlabel('Step', fontsize=font)
         ax2.set_ylabel('Peak Freq (Hz)', fontsize=font)
         ax2.set_title('(b) Peak Evolution', fontweight='bold', fontsize=font)
@@ -1091,10 +1161,15 @@ class ProgressiveStrippingReporter:
                      ms=6, alpha=alpha)
             ax3.invert_yaxis()
             if show_annot:
+                _annots_c = []
                 for d, imp in zip(depths, imps):
-                    ax3.annotate(f"{imp:.2f}", (imp, d),
+                    ann = ax3.annotate(f"{imp:.2f}", (imp, d),
                                  fontsize=annot_size,
-                                 xytext=(4, 0), textcoords='offset points')
+                                 xytext=(off_x, 0),
+                                 textcoords='offset points')
+                    _annots_c.append(ann)
+                if auto_arrange:
+                    _spread_annotations(_annots_c)
         ax3.set_xlabel('Impedance Contrast', fontsize=font)
         ax3.set_ylabel('Depth (m)', fontsize=font)
         ax3.set_title('(c) Interface Profile', fontweight='bold', fontsize=font)

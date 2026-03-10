@@ -8,6 +8,7 @@ Supports two modes:
   - **Automatic**: peaks pre-detected, user can review and click Finish
   - **Interactive**: user steps through each step, selecting peaks manually
 """
+import re
 import numpy as np
 
 from PyQt5.QtCore import Qt, pyqtSignal
@@ -21,6 +22,12 @@ from ..widgets.plot_widget import MatplotlibWidget
 from ..widgets.style_constants import BUTTON_PRIMARY, BUTTON_SUCCESS, EMOJI
 
 SEC_COLORS = ["green", "purple", "orange", "brown", "teal"]
+
+
+def _natural_sort_key(s):
+    """Sort key that orders 'Step0', 'Step1', ..., 'Step10' numerically."""
+    return [int(c) if c.isdigit() else c.lower()
+            for c in re.split(r'(\d+)', s)]
 
 
 class StripWizardView(QWidget):
@@ -217,7 +224,7 @@ class StripWizardView(QWidget):
             return
 
         self._result_dict = result_dict
-        self._step_names = sorted(step_results.keys())
+        self._step_names = sorted(step_results.keys(), key=_natural_sort_key)
         self._steps = []
         self._peak_data = {}
         self._bedrock_data = {}
@@ -395,7 +402,7 @@ class StripWizardView(QWidget):
             ax.plot(f0[0], f0[1], "*", color="red", ms=14, zorder=10,
                     markeredgecolor="darkred", markeredgewidth=0.8)
             ax.axvline(f0[0], color="red", ls="--", lw=0.8, alpha=0.4)
-            ax.annotate(
+            ann_f0 = ax.annotate(
                 f"f0 = {f0[0]:.4f} Hz\nA = {f0[1]:.2f}",
                 xy=(f0[0], f0[1]), xytext=(12, -18),
                 textcoords="offset points", fontsize=8, color="red",
@@ -403,6 +410,7 @@ class StripWizardView(QWidget):
                 bbox=dict(boxstyle="round,pad=0.3", fc="white",
                           ec="red", alpha=0.9),
                 arrowprops=dict(arrowstyle="->", color="red", lw=0.8))
+            ann_f0.draggable(True)
 
         sec = pk.get("secondary", [])
         for j, s in enumerate(sec):
@@ -411,12 +419,13 @@ class StripWizardView(QWidget):
                     markeredgecolor="black", markeredgewidth=0.5)
             ax.axvline(s[0], color=sc, ls=":", lw=0.7, alpha=0.4)
             y_off = 10 if j % 2 == 0 else -18
-            ax.annotate(
+            ann_sec = ax.annotate(
                 f"Sec.{j+1}: {s[0]:.3f} Hz ({s[1]:.2f})",
                 xy=(s[0], s[1]), xytext=(8, y_off),
                 textcoords="offset points", fontsize=7, color=sc,
                 bbox=dict(boxstyle="round,pad=0.2", fc="#f0f0f0",
                           ec=sc, alpha=0.8))
+            ann_sec.draggable(True)
 
         ax.legend(fontsize=8, loc="upper right", framealpha=0.85)
         fig.tight_layout()
