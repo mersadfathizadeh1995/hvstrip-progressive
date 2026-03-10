@@ -1,18 +1,37 @@
 """HV Curve View — Interactive HV forward-model display with peak picking.
 
 Right-panel canvas tab showing the computed H/V spectral ratio curve
-with interactive peak selection (f0 and secondary peaks).
+with interactive peak selection (f0 and secondary peaks), configurable
+axis labels, grid alpha, line styling, and legend.
 """
 import numpy as np
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox,
-    QPushButton, QDoubleSpinBox, QSizePolicy,
+    QPushButton, QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit,
+    QSizePolicy,
 )
 
 from ..widgets.plot_widget import MatplotlibWidget
 from ..widgets.style_constants import EMOJI
+
+CURVE_COLORS = {
+    "Royal Blue": "royalblue",
+    "Steel Blue": "steelblue",
+    "Teal": "teal",
+    "Dark Green": "darkgreen",
+    "Crimson": "crimson",
+    "Black": "black",
+    "Navy": "navy",
+}
+
+SEC_COLORS = ["green", "purple", "orange", "brown", "teal"]
+
+LEGEND_POSITIONS = [
+    "upper right", "upper left", "lower right", "lower left",
+    "center right", "center left", "best",
+]
 
 
 class HVCurveView(QWidget):
@@ -40,25 +59,87 @@ class HVCurveView(QWidget):
         self._plot.canvas.mpl_connect("button_press_event", self._on_click)
         lay.addWidget(self._plot, 1)
 
-        # Options row
+        # ── Options row 1: display toggles ─────────────────────
         opts = QHBoxLayout()
+        opts.setSpacing(4)
         self._log_x = QCheckBox("Log X"); self._log_x.setChecked(True)
         self._log_y = QCheckBox("Log Y")
         self._grid = QCheckBox("Grid"); self._grid.setChecked(True)
         self._show_vs = QCheckBox("Show Vs"); self._show_vs.setChecked(True)
-        self._hs_pct = QDoubleSpinBox()
-        self._hs_pct.setRange(10, 100); self._hs_pct.setValue(25)
-        self._hs_pct.setSuffix(" %")
-        for w in [self._log_x, self._log_y, self._grid, self._show_vs]:
+        self._show_legend = QCheckBox("Legend"); self._show_legend.setChecked(True)
+        for w in [self._log_x, self._log_y, self._grid,
+                  self._show_vs, self._show_legend]:
             w.stateChanged.connect(lambda _: self._redraw())
             opts.addWidget(w)
+
         opts.addWidget(QLabel("HS:"))
-        opts.addWidget(self._hs_pct)
+        self._hs_pct = QDoubleSpinBox()
+        self._hs_pct.setRange(10, 100); self._hs_pct.setValue(25)
+        self._hs_pct.setSuffix(" %"); self._hs_pct.setMaximumWidth(65)
         self._hs_pct.valueChanged.connect(lambda _: self._redraw())
+        opts.addWidget(self._hs_pct)
         opts.addStretch()
         lay.addLayout(opts)
 
-        # Peak selection row
+        # ── Options row 2: styling ─────────────────────────────
+        style = QHBoxLayout()
+        style.setSpacing(4)
+
+        style.addWidget(QLabel("Color:"))
+        self._line_color = QComboBox()
+        self._line_color.addItems(list(CURVE_COLORS.keys()))
+        self._line_color.setMaximumWidth(100)
+        self._line_color.currentIndexChanged.connect(lambda _: self._redraw())
+        style.addWidget(self._line_color)
+
+        style.addWidget(QLabel("LW:"))
+        self._line_width = QDoubleSpinBox()
+        self._line_width.setRange(0.5, 5.0); self._line_width.setValue(1.5)
+        self._line_width.setSingleStep(0.5); self._line_width.setMaximumWidth(55)
+        self._line_width.valueChanged.connect(lambda _: self._redraw())
+        style.addWidget(self._line_width)
+
+        style.addWidget(QLabel("Grid α:"))
+        self._grid_alpha = QDoubleSpinBox()
+        self._grid_alpha.setRange(0.05, 1.0); self._grid_alpha.setValue(0.3)
+        self._grid_alpha.setSingleStep(0.05); self._grid_alpha.setMaximumWidth(55)
+        self._grid_alpha.valueChanged.connect(lambda _: self._redraw())
+        style.addWidget(self._grid_alpha)
+
+        style.addWidget(QLabel("Leg:"))
+        self._legend_loc = QComboBox()
+        self._legend_loc.addItems(LEGEND_POSITIONS)
+        self._legend_loc.setMaximumWidth(100)
+        self._legend_loc.currentIndexChanged.connect(lambda _: self._redraw())
+        style.addWidget(self._legend_loc)
+
+        style.addStretch()
+        lay.addLayout(style)
+
+        # ── Options row 3: editable labels ─────────────────────
+        labels = QHBoxLayout()
+        labels.setSpacing(4)
+        labels.addWidget(QLabel("Title:"))
+        self._title_edit = QLineEdit("HV Forward Model")
+        self._title_edit.setMaximumWidth(200)
+        self._title_edit.editingFinished.connect(self._redraw)
+        labels.addWidget(self._title_edit)
+
+        labels.addWidget(QLabel("X:"))
+        self._xlabel_edit = QLineEdit("Frequency (Hz)")
+        self._xlabel_edit.setMaximumWidth(140)
+        self._xlabel_edit.editingFinished.connect(self._redraw)
+        labels.addWidget(self._xlabel_edit)
+
+        labels.addWidget(QLabel("Y:"))
+        self._ylabel_edit = QLineEdit("H/V Ratio")
+        self._ylabel_edit.setMaximumWidth(140)
+        self._ylabel_edit.editingFinished.connect(self._redraw)
+        labels.addWidget(self._ylabel_edit)
+        labels.addStretch()
+        lay.addLayout(labels)
+
+        # ── Peak selection row ─────────────────────────────────
         peak = QHBoxLayout()
         self._btn_f0 = QPushButton("Select f0")
         self._btn_f0.setCheckable(True)
@@ -116,35 +197,51 @@ class HVCurveView(QWidget):
             ax = fig.add_subplot(111)
             ax_vs = None
 
-        ax.plot(self._freqs, self._amps, color="royalblue", lw=1.5, label="H/V")
+        color = CURVE_COLORS.get(self._line_color.currentText(), "royalblue")
+        lw = self._line_width.value()
+        ax.plot(self._freqs, self._amps, color=color, lw=lw, label="H/V")
 
+        # Primary peak
         if self._f0:
             f, a, _ = self._f0
-            ax.plot(f, a, "*", color="red", ms=14, zorder=5)
+            ax.plot(f, a, "*", color="red", ms=14, zorder=5,
+                    markeredgecolor="darkred", markeredgewidth=0.8)
             ax.axvline(f, color="red", ls="--", alpha=0.5, lw=0.8)
-            ax.annotate(f"f0={f:.3f}", xy=(f, a), xytext=(10, 10),
-                        textcoords="offset points", fontsize=8, color="red",
-                        arrowprops=dict(arrowstyle="->", color="red", lw=0.8))
-
-        for i, (sf, sa, _) in enumerate(self._secondary):
-            ax.plot(sf, sa, "*", color="black", ms=10, zorder=5)
-            ax.axvline(sf, color="gray", ls=":", alpha=0.5, lw=0.8)
-            # Alternate annotation offset to avoid overlaps
-            y_off = -14 if i % 2 == 0 else 12
             ax.annotate(
-                f"{sf:.3f} Hz ({sa:.2f})", xy=(sf, sa),
-                xytext=(8, y_off), textcoords="offset points",
-                fontsize=7, color="#333",
+                f"f0 = {f:.3f} Hz\nA = {a:.2f}",
+                xy=(f, a), xytext=(10, 10),
+                textcoords="offset points", fontsize=8, color="red",
+                fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.3", fc="white",
+                          ec="red", alpha=0.85, lw=0.5),
+                arrowprops=dict(arrowstyle="->", color="red", lw=0.8))
+
+        # Secondary peaks
+        for i, (sf, sa, _) in enumerate(self._secondary):
+            sc = SEC_COLORS[i % len(SEC_COLORS)]
+            ax.plot(sf, sa, "*", color=sc, ms=11, zorder=5,
+                    markeredgecolor="black", markeredgewidth=0.5)
+            ax.axvline(sf, color=sc, ls=":", alpha=0.5, lw=0.8)
+            y_off = -16 if i % 2 == 0 else 12
+            ax.annotate(
+                f"Sec.{i+1}: {sf:.3f} Hz ({sa:.2f})",
+                xy=(sf, sa), xytext=(8, y_off),
+                textcoords="offset points", fontsize=7, color=sc,
+                fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.2", fc="white",
-                          ec="gray", alpha=0.85, lw=0.5))
+                          ec=sc, alpha=0.85, lw=0.5))
 
         if self._log_x.isChecked(): ax.set_xscale("log")
         if self._log_y.isChecked(): ax.set_yscale("log")
-        ax.set_xlabel("Frequency (Hz)")
-        ax.set_ylabel("H/V Ratio")
-        ax.set_title("HV Forward Model")
-        if self._grid.isChecked(): ax.grid(True, alpha=0.3, which="both")
-        ax.legend(fontsize=8)
+        ax.set_xlabel(self._xlabel_edit.text())
+        ax.set_ylabel(self._ylabel_edit.text())
+        ax.set_title(self._title_edit.text(), fontsize=12, fontweight="bold")
+        if self._grid.isChecked():
+            ax.grid(True, alpha=self._grid_alpha.value(), which="both")
+
+        if self._show_legend.isChecked():
+            ax.legend(fontsize=8, loc=self._legend_loc.currentText(),
+                      framealpha=0.85)
 
         if show_vs and ax_vs:
             self._draw_vs(ax_vs)
