@@ -76,45 +76,51 @@ def _spread_annotations(annotations, min_gap_pts=14):
             prev.xyann = (px, -(abs(py) + min_gap_pts))
 
 
-def _annotate_peaks_staircase(ax, peaks, colors, annot_size, off_x, off_y):
-    """Place peak annotations below their markers with leader-line arrows.
+def _annotate_peaks_staircase(ax, peaks, colors, annot_size, off_x, off_y,
+                              arrow_color='black', arrow_width=0.8,
+                              box_color='#FFFFCC', text_color='black'):
+    """Place peak annotations in a top-left → bottom-right diagonal.
 
-    Peaks are sorted by frequency (x).  The text is placed at a staircase
-    of y-offsets below each peak so labels never overlap, with an arrow
-    from the text to the scatter dot.
+    Peaks are sorted by frequency.  The first (lowest-freq) label is placed
+    top-left above the data, and each successive label is placed a step
+    lower-right, creating a natural diagonal that mirrors the left-to-right
+    peak progression without overlapping.
 
     Parameters
     ----------
     ax : matplotlib.axes.Axes
-    peaks : list[tuple(freq, amp, color_index)]
-        Each element is ``(peak_freq, peak_amp, plot_color)``.
-    colors : array-like
-        Colormap array (indexed by step).
+    peaks : list[tuple(freq, amp, color)]
+    colors : ignored (kept for API compat)
     annot_size : int
-        Font size for annotations.
-    off_x, off_y : int
-        Base offsets in points (off_y controls how far below to start).
+    off_x, off_y : int   – base spacing in offset-points
+    arrow_color : str     – color of the leader line (default black)
+    arrow_width : float   – line width of the arrow
+    box_color : str       – face color of the label box (default pale yellow)
+    text_color : str      – color of the label text (default black)
     """
     if not peaks:
         return
-    # Sort peaks by frequency so the staircase goes left→right
     peaks_sorted = sorted(peaks, key=lambda p: p[0])
     n = len(peaks_sorted)
-    # Staircase: each successive label is placed a bit lower
-    step_pts = max(annot_size + 8, 16)  # vertical spacing between labels
-    for rank, (pf, pa, clr) in enumerate(peaks_sorted):
-        y_off = -(off_y + rank * step_pts)
+    step_v = max(annot_size + 6, 14)   # vertical step between labels
+    step_h = max(off_x, 6)             # horizontal step between labels
+    # Start high-left, walk down-right
+    for rank, (pf, pa, _clr) in enumerate(peaks_sorted):
+        x_off = -(n - rank) * step_h
+        y_off = (n - rank) * step_v
         ax.annotate(
-            f"{pf:.2f} Hz\n{pa:.1f}",
+            f"{pf:.2f} Hz",
             xy=(pf, pa),
-            xytext=(off_x, y_off),
+            xytext=(x_off, y_off),
             textcoords='offset points',
             fontsize=annot_size,
-            ha='left', va='top',
-            bbox=dict(boxstyle='round,pad=0.2', fc='white',
-                      alpha=0.8, lw=0.5),
-            arrowprops=dict(arrowstyle='->', color=clr,
-                            lw=0.8, connectionstyle='arc3,rad=0.15')
+            color=text_color,
+            ha='center', va='bottom',
+            bbox=dict(boxstyle='round,pad=0.25', fc=box_color,
+                      ec='gray', alpha=0.9, lw=0.5),
+            arrowprops=dict(arrowstyle='->', color=arrow_color,
+                            lw=arrow_width,
+                            connectionstyle='arc3,rad=-0.15')
         )
 
 
@@ -858,6 +864,10 @@ class ProgressiveStrippingReporter:
         annot_size = kw.get("annotation_size", max(font - 2, 6))
         off_x = kw.get("annotation_offset_x", 6)
         off_y = kw.get("annotation_offset_y", 14)
+        arrow_color = kw.get("arrow_color", "black")
+        arrow_width = kw.get("arrow_width", 0.8)
+        box_color = kw.get("box_color", "#FFFFCC")
+        text_color = kw.get("text_color", "black")
         _peak_info = []  # (freq, amp, color) for staircase annotation
         for i, sd in enumerate(self.step_data):
             hv = sd['hv_data']
@@ -877,7 +887,11 @@ class ProgressiveStrippingReporter:
                         _peak_info.append((pf, pa, colors[i]))
         if _peak_info:
             _annotate_peaks_staircase(ax, _peak_info, colors, annot_size,
-                                      off_x, off_y)
+                                      off_x, off_y,
+                                      arrow_color=arrow_color,
+                                      arrow_width=arrow_width,
+                                      box_color=box_color,
+                                      text_color=text_color)
 
         if log_x:
             ax.set_xscale('log')
@@ -1151,7 +1165,9 @@ class ProgressiveStrippingReporter:
                             _peaks_a.append((pf, pa, cmap_colors[si]))
         if _peaks_a:
             _annotate_peaks_staircase(ax1, _peaks_a, cmap_colors,
-                                      annot_size, off_x, max(off_y, 10))
+                                      annot_size, off_x, max(off_y, 10),
+                                      arrow_color='black', arrow_width=0.6,
+                                      box_color='#FFFFCC', text_color='black')
         ax1.set_xlabel('Frequency (Hz)', fontsize=font)
         ax1.set_ylabel('H/V Amplitude', fontsize=font)
         ax1.set_title('(a) HVSR Evolution', fontweight='bold', fontsize=font)

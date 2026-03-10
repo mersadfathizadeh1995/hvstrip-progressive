@@ -295,8 +295,8 @@ class FigureStudioView(QWidget):
             c = QComboBox(); c.addItems(items); c.setCurrentIndex(idx)
             return c
 
-        def _add_annotation_controls(controls, form_layout):
-            """Add show_annotations checkbox + annotation_size + offset + auto-arrange."""
+        def _add_annotation_controls(controls, form_layout, include_style=False):
+            """Add show_annotations checkbox + annotation_size + offset + style."""
             controls["show_annotations"] = QCheckBox()
             controls["show_annotations"].setChecked(True)
             form_layout.addRow("Peak Labels:", controls["show_annotations"])
@@ -304,11 +304,21 @@ class FigureStudioView(QWidget):
             form_layout.addRow("Label Size:", controls["annotation_size"])
             controls["annotation_offset_x"] = _spin_int(-30, 30, 6)
             form_layout.addRow("Label Offset X:", controls["annotation_offset_x"])
-            controls["annotation_offset_y"] = _spin_int(-30, 30, 6)
+            controls["annotation_offset_y"] = _spin_int(-30, 30, 14)
             form_layout.addRow("Label Offset Y:", controls["annotation_offset_y"])
-            controls["auto_arrange_labels"] = QCheckBox()
-            controls["auto_arrange_labels"].setChecked(True)
-            form_layout.addRow("Auto-Arrange:", controls["auto_arrange_labels"])
+            if include_style:
+                COLORS = ["black", "gray", "red", "blue", "green",
+                          "darkblue", "darkred", "orange"]
+                BOX_COLORS = ["#FFFFCC", "white", "#E8F0FE", "#FFF0F0",
+                              "#F0FFF0", "#F5F5DC", "lightyellow", "ivory"]
+                controls["arrow_color"] = _combo(COLORS)
+                form_layout.addRow("Arrow Color:", controls["arrow_color"])
+                controls["arrow_width"] = _spin_float(0.3, 3.0, 0.8, 0.1)
+                form_layout.addRow("Arrow Width:", controls["arrow_width"])
+                controls["box_color"] = _combo(BOX_COLORS)
+                form_layout.addRow("Box Color:", controls["box_color"])
+                controls["text_color"] = _combo(COLORS)
+                form_layout.addRow("Text Color:", controls["text_color"])
 
         # Store controls on the widget for retrieval
         w._controls = {}
@@ -327,7 +337,7 @@ class FigureStudioView(QWidget):
                            ("Alpha:", "alpha"), ("Show Peaks:", "show_peaks"),
                            ("Marker Size:", "marker_size")]:
                 form.addRow(lbl, w._controls[k])
-            _add_annotation_controls(w._controls, form)
+            _add_annotation_controls(w._controls, form, include_style=True)
 
         elif key == "peak_evolution":
             w._controls["grid"] = QCheckBox(); w._controls["grid"].setChecked(True)
