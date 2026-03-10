@@ -379,31 +379,122 @@ class HVStripWindow(QMainWindow):
         return None
 
     def _on_wizard_finished(self, peak_data):
-        """Handle wizard Finish: update dock, figure studio, optionally regen report."""
+        """Handle wizard Finish: persist peaks, update dock, figure studio, report."""
+        # Write modified peaks back to disk summary CSVs
+        self._persist_peak_data(peak_data)
+
+        # Update in-memory step_results
+        result = getattr(self, '_last_result', None) or {}
+        sr = result.get("step_results", {})
+        for step_name, pdata in peak_data.items():
+            f0 = pdata.get("f0")
+            if f0 and step_name in sr:
+                sr[step_name]["peak_frequency"] = f0[0]
+                sr[step_name]["peak_amplitude"] = f0[1]
+
         # Update strip summary dock with peak data
         dock = self.get_strip_summary_dock()
         if dock and hasattr(dock, 'set_results'):
-            result = getattr(self, '_result', None) or {}
             dock.set_results(result, peak_data=peak_data)
             dock.setVisible(True)
             dock.raise_()
 
-        # Update figure studio (re-render with final peaks)
+        # Re-initialize figure studio reporter to pick up updated CSV files
         fs = self.get_figure_studio()
-        if fs and hasattr(fs, '_draw_current'):
-            fs._draw_current()
+        if fs and hasattr(fs, '_init_reporter'):
+            fs._init_reporter()
+            if hasattr(fs, '_draw_current'):
+                fs._draw_current()
 
         # Regenerate report if panel checkbox is checked
         panel = getattr(self, '_strip_single_panel', None)
         if panel and hasattr(panel, 'is_report_enabled'):
             if panel.is_report_enabled():
-                self._regenerate_strip_report(peak_data)
+                self._regenerate_strip_report()
 
-        self.log("Wizard finished — peak data finalized")
+        self.log("Wizard finished — peak data persisted and report updated")
 
-    def _regenerate_strip_report(self, peak_data):
-        """Regenerate comprehensive report with user-selected peaks."""
-        result = getattr(self, '_result', None)
+    def _persist_peak_data(self, peak_data):
+        """Write wizard-selected peaks back to step summary CSVs on disk.
+
+        The report generator reads ``Peak_Frequency_Hz`` and ``Peak_Amplitude``
+        from these summary files, so updating them ensures the regenerated
+        report reflects the user's peak selections.
+        """
+        import csv as _csv
+        result = getattr(self, '_last_result', None)
+        if not result:
+            return
+        strip_dir = result.get("strip_directory")
+        if not strip_dir:
+            return
+        strip_path = Path(strip_dir)
+        for step_name, pdata in peak_data.items():
+            f0 = pdata.get("f0")
+            if not f0:
+                continue
+            step_folder = strip_path / step_name
+            if not step_folder.is_dir():
+                continue
+            # Find existing summary CSV(s)
+            summary_files = list(step_folder.glob('*summary*.csv'))
+            if summary_files:
+                for sf in summary_files:
+                    self._update_summary_csv(sf, f0[0], f0[1])
+            else:
+                # Create a minimal summary CSV so the reporter picks it up
+                sf = step_folder / 'step_summary.csv'
+                self._create_minimal_summary_csv(sf, step_name, f0[0], f0[1])
+        self.log(f"Peak data written to {len(peak_data)} step folders")
+
+    @staticmethod
+    def _update_summary_csv(csv_path, peak_freq, peak_amp):
+        """Update Peak_Frequency_Hz and Peak_Amplitude in an existing CSV."""
+        import csv as _csv
+        try:
+            with open(csv_path, 'r', newline='') as f:
+                reader = _csv.reader(f)
+                rows = list(reader)
+            if len(rows) < 2:
+                return
+            header = rows[0]
+            # Find column indices
+            freq_col = None
+            amp_col = None
+            for i, h in enumerate(header):
+                if h.strip() == 'Peak_Frequency_Hz':
+                    freq_col = i
+                elif h.strip() == 'Peak_Amplitude':
+                    amp_col = i
+            if freq_col is not None and amp_col is not None:
+                rows[1][freq_col] = f'{peak_freq:.6f}'
+                rows[1][amp_col] = f'{peak_amp:.6f}'
+                with open(csv_path, 'w', newline='') as f:
+                    writer = _csv.writer(f)
+                    writer.writerows(rows)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _create_minimal_summary_csv(csv_path, step_name, peak_freq, peak_amp):
+        """Create a minimal summary CSV for the report generator to read."""
+        import csv as _csv
+        try:
+            with open(csv_path, 'w', newline='') as f:
+                writer = _csv.writer(f)
+                writer.writerow(['Step', 'N_Finite_Layers',
+                                 'Peak_Frequency_Hz', 'Peak_Amplitude'])
+                parts = step_name.split('_')
+                step_num = parts[0].replace('Step', '')
+                n_layers = parts[1].split('-')[0] if len(parts) > 1 else '?'
+                writer.writerow([f'Step{step_num}', n_layers,
+                                 f'{peak_freq:.6f}', f'{peak_amp:.6f}'])
+        except Exception:
+            pass
+
+    def _regenerate_strip_report(self):
+        """Regenerate comprehensive report (reads updated CSVs from disk)."""
+        result = getattr(self, '_last_result', None)
         if not result:
             return
         strip_dir = result.get("strip_directory")
