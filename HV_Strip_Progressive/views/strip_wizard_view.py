@@ -765,10 +765,6 @@ class StripWizardView(QWidget):
     def _run_auto_detection(self):
         """Run auto peak detection on all steps using cfg."""
         cfg = self._auto_peak_cfg or {}
-        min_prom = cfg.get("min_prominence", 0.3)
-        min_amp = cfg.get("min_amplitude", 1.5)
-        n_secondary = cfg.get("n_secondary", 1)
-        ranges = cfg.get("ranges", [])
 
         for i, step in enumerate(self._steps):
             freqs, amps = step.get("freqs"), step.get("amps")
@@ -776,17 +772,125 @@ class StripWizardView(QWidget):
             if freqs is None or amps is None:
                 continue
 
-            # Primary peak detection
-            f0 = self._detect_primary(freqs, amps, ranges)
-            sec = self._detect_secondary(freqs, amps, f0, n_secondary,
-                                         min_prom, min_amp, ranges)
+            f0, sec = self._detect_with_config(freqs, amps, cfg)
             self._peak_data[name] = {"f0": f0, "secondary": sec}
             self._update_list_icon(i, f0 is not None)
 
         self._redraw_hv()
 
-    def _detect_primary(self, freqs, amps, ranges):
-        """Detect primary peak, honouring ranges[0] if configured."""
+    # ── Unified detection dispatcher ────────────────────────────────
+
+    def _detect_with_config(self, freqs, amps, cfg):
+        """Route detection to the appropriate strategy.
+
+        Returns (f0_tuple, [secondary_tuples]) where each tuple is
+        (frequency, amplitude, index).
+        """
+        strategy = cfg.get("strategy", "range_constrained")
+
+        if strategy == "preset":
+            return self._detect_preset(freqs, amps, cfg)
+        if strategy == "advanced":
+            return self._detect_advanced(freqs, amps, cfg)
+        # Default: range_constrained (also handles legacy configs)
+        return self._detect_range_constrained(freqs, amps, cfg)
+
+    def _detect_range_constrained(self, freqs, amps, cfg):
+        """Argmax within user-defined frequency ranges."""
+        min_amp = cfg.get("min_amplitude", 1.5)
+        n_secondary = cfg.get("n_secondary", 1)
+        ranges = cfg.get("ranges", [])
+
+        # Primary
+        f0 = self._detect_primary_in_range(freqs, amps, ranges)
+        # Secondary
+        sec = self._detect_secondary_in_ranges(
+            freqs, amps, f0, n_secondary, min_amp, ranges,
+            cfg.get("min_prominence", cfg.get("prominence", 0.3)))
+        return f0, sec
+
+    def _detect_preset(self, freqs, amps, cfg):
+        """Use core peak_detection.py preset for primary, find_all_peaks for secondary."""
+        try:
+            from ..core.peak_detection import (
+                detect_peak, find_all_peaks, get_peak_detection_preset)
+        except ImportError:
+            return self._detect_range_constrained(freqs, amps, cfg)
+
+        preset_name = cfg.get("preset", "default")
+        preset_cfg = get_peak_detection_preset(preset_name)
+        min_amp_override = cfg.get("min_amplitude", 0)
+        if min_amp_override and min_amp_override > 0:
+            preset_cfg["min_amplitude"] = min_amp_override
+
+        # Primary via core engine
+        pf, pa, pi = detect_peak(freqs, amps, {"peak_detection": preset_cfg})
+        f0 = (pf, pa, pi)
+
+        # Secondary via find_all_peaks + filtering
+        n_secondary = cfg.get("n_secondary", 1)
+        ranges = cfg.get("ranges", [])
+        params = preset_cfg.get("find_peaks_params", {})
+        all_peaks = find_all_peaks(
+            freqs, amps,
+            prominence=params.get("prominence", 0.1),
+            distance=params.get("distance", 2),
+            freq_min=preset_cfg.get("freq_min"),
+            freq_max=preset_cfg.get("freq_max"),
+            min_amplitude=preset_cfg.get("min_amplitude"),
+        )
+        sec = self._pick_secondary_from_all(
+            all_peaks, f0, n_secondary, ranges)
+        return f0, sec
+
+    def _detect_advanced(self, freqs, amps, cfg):
+        """Full custom config → core engine."""
+        try:
+            from ..core.peak_detection import detect_peak, find_all_peaks
+        except ImportError:
+            return self._detect_range_constrained(freqs, amps, cfg)
+
+        # Build peak_detection config dict for core engine
+        prom = cfg.get("prominence", 0.2)
+        dist = cfg.get("distance", 3)
+        width_val = cfg.get("width", 0)
+        peak_cfg = {
+            "method": cfg.get("method", "find_peaks"),
+            "select": cfg.get("select", "leftmost"),
+            "find_peaks_params": {"prominence": prom, "distance": dist},
+            "freq_min": cfg.get("freq_min"),
+            "freq_max": cfg.get("freq_max"),
+            "min_rel_height": cfg.get("min_rel_height", 0.0),
+            "exclude_first_n": cfg.get("exclude_first_n", 0),
+            "min_amplitude": cfg.get("min_amplitude"),
+            "check_clarity_ratio": cfg.get("check_clarity", False),
+            "clarity_ratio_threshold": cfg.get("clarity_threshold", 1.5),
+        }
+        if width_val and float(width_val) > 0:
+            peak_cfg["width"] = float(width_val)
+
+        pf, pa, pi = detect_peak(freqs, amps, {"peak_detection": peak_cfg})
+        f0 = (pf, pa, pi)
+
+        # Secondary
+        n_secondary = cfg.get("n_secondary", 1)
+        ranges = cfg.get("ranges", [])
+        all_peaks = find_all_peaks(
+            freqs, amps,
+            prominence=prom, distance=dist,
+            width=width_val if width_val and float(width_val) > 0 else None,
+            freq_min=cfg.get("freq_min"),
+            freq_max=cfg.get("freq_max"),
+            min_amplitude=cfg.get("min_amplitude"),
+        )
+        sec = self._pick_secondary_from_all(
+            all_peaks, f0, n_secondary, ranges)
+        return f0, sec
+
+    # ── Helpers (kept from old code) ────────────────────────────────
+
+    def _detect_primary_in_range(self, freqs, amps, ranges):
+        """Detect primary peak via argmax within optional range."""
         rng = ranges[0] if ranges else None
         if rng:
             fmin_r = rng.get("min", 0.0)
@@ -796,12 +900,11 @@ class StripWizardView(QWidget):
                 masked = np.where(mask, amps, -np.inf)
                 idx = int(np.argmax(masked))
                 return (float(freqs[idx]), float(amps[idx]), idx)
-        # Fallback: global max
         idx = int(np.argmax(amps))
         return (float(freqs[idx]), float(amps[idx]), idx)
 
-    def _detect_secondary(self, freqs, amps, f0, n_secondary,
-                          min_prom, min_amp, ranges):
+    def _detect_secondary_in_ranges(self, freqs, amps, f0, n_secondary,
+                                    min_amp, ranges, min_prom=0.3):
         """Detect secondary peaks using ranges or scipy find_peaks."""
         sec = []
         if f0 is None:
@@ -813,12 +916,10 @@ class StripWizardView(QWidget):
                 fmin_r = rng.get("min", 0.0)
                 fmax_r = rng.get("max", 999.0)
                 mask = (freqs >= fmin_r) & (freqs <= fmax_r)
-                # Exclude primary peak region
                 f0_f = f0[0]
                 exclusion = max(f0_f * 0.1, 0.05)
                 mask &= ~((freqs >= f0_f - exclusion) &
                           (freqs <= f0_f + exclusion))
-                # Exclude already-found secondary peaks
                 for prev in sec:
                     exc = max(prev[0] * 0.1, 0.05)
                     mask &= ~((freqs >= prev[0] - exc) &
@@ -829,11 +930,9 @@ class StripWizardView(QWidget):
                     if amps[idx] >= min_amp:
                         sec.append((float(freqs[idx]), float(amps[idx]), idx))
             else:
-                # Scipy-based detection
                 try:
                     from scipy.signal import find_peaks as _find_peaks
-                    peak_indices, props = _find_peaks(amps, prominence=min_prom)
-                    # Filter by min amplitude and exclude primary
+                    peak_indices, _ = _find_peaks(amps, prominence=min_prom)
                     candidates = []
                     for pi in peak_indices:
                         if amps[pi] < min_amp:
@@ -848,13 +947,48 @@ class StripWizardView(QWidget):
                         if not skip:
                             candidates.append((float(freqs[pi]),
                                                float(amps[pi]), int(pi)))
-                    # Sort by amplitude descending, take next
                     candidates.sort(key=lambda x: -x[1])
                     if candidates:
                         sec.append(candidates[0])
                 except ImportError:
                     pass
+        return sec
 
+    def _pick_secondary_from_all(self, all_peaks, f0, n_secondary, ranges):
+        """Select N secondary peaks from a list of all detected peaks.
+
+        Respects per-peak frequency ranges if provided; otherwise picks
+        next-highest-amplitude peaks that don't overlap with f0 or each other.
+        """
+        sec = []
+        if not all_peaks or f0 is None:
+            return sec
+
+        # Remove f0 from candidates
+        f0_freq = f0[0]
+        candidates = [p for p in all_peaks
+                      if abs(p[0] - f0_freq) > max(f0_freq * 0.1, 0.05)]
+
+        for si in range(n_secondary):
+            rng = ranges[si + 1] if (si + 1) < len(ranges) else None
+            if rng:
+                fmin_r = rng.get("min", 0.0)
+                fmax_r = rng.get("max", 999.0)
+                in_range = [c for c in candidates
+                            if fmin_r <= c[0] <= fmax_r]
+                if in_range:
+                    best = max(in_range, key=lambda x: x[1])
+                    sec.append(best)
+                    candidates = [c for c in candidates
+                                  if abs(c[0] - best[0]) > max(best[0] * 0.1, 0.05)]
+            else:
+                # Pick highest amplitude remaining candidate
+                remaining = sorted(candidates, key=lambda x: -x[1])
+                if remaining:
+                    best = remaining[0]
+                    sec.append(best)
+                    candidates = [c for c in candidates
+                                  if abs(c[0] - best[0]) > max(best[0] * 0.1, 0.05)]
         return sec
 
     # ══════════════════════════════════════════════════════════════

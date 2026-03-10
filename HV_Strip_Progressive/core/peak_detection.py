@@ -62,6 +62,26 @@ PEAK_DETECTION_PRESETS = {
     },
 }
 
+# Human-readable descriptions for each preset
+PRESET_DESCRIPTIONS = {
+    "default": (
+        "General-purpose: leftmost peak with prominence ≥ 0.2, "
+        "freq ≥ 0.5 Hz, relative height ≥ 25%"
+    ),
+    "forward_modeling": (
+        "Forward modeling: leftmost peak with prominence ≥ 0.1, "
+        "freq ≥ 0.3 Hz, min amplitude 1.5, clarity ratio check"
+    ),
+    "conservative": (
+        "Conservative: highest-amplitude peak with prominence ≥ 0.5, "
+        "freq ≥ 0.5 Hz, min amplitude 2.0"
+    ),
+    "forward_modeling_sharp": (
+        "Sharp forward modeling: leftmost-sharpest peak with "
+        "prominence ≥ 0.1, freq ≥ 0.3 Hz, min amplitude 1.5"
+    ),
+}
+
 
 def get_peak_detection_preset(preset_name: str) -> Dict:
     """
@@ -244,7 +264,11 @@ def detect_peak(
 
     # --- find_peaks mode ---
     if method == "find_peaks":
-        params = peak_cfg.get("find_peaks_params", {})
+        params = dict(peak_cfg.get("find_peaks_params", {}))
+        # Inject width if specified at top level
+        width_val = peak_cfg.get("width")
+        if width_val and float(width_val) > 0:
+            params["width"] = float(width_val)
         peaks, _ = find_peaks(amps, **params)
         peaks = np.array(peaks, dtype=int)
 
@@ -297,8 +321,10 @@ def find_all_peaks(
     amps: np.ndarray,
     prominence: float = 0.1,
     distance: int = 2,
+    width: float = None,
     freq_min: float = None,
     freq_max: float = None,
+    min_amplitude: float = None,
 ) -> List[Tuple[float, float, int]]:
     """
     Find all significant peaks in an HVSR curve.
@@ -313,10 +339,14 @@ def find_all_peaks(
         Minimum peak prominence.
     distance : int
         Minimum sample distance between peaks.
+    width : float, optional
+        Minimum peak width (samples). None disables.
     freq_min : float, optional
         Minimum frequency bound.
     freq_max : float, optional
         Maximum frequency bound.
+    min_amplitude : float, optional
+        Minimum absolute amplitude.
 
     Returns
     -------
@@ -324,8 +354,12 @@ def find_all_peaks(
         List of (frequency, amplitude, index) for each peak,
         sorted by frequency ascending.
     """
-    peaks, _ = find_peaks(amps, prominence=prominence, distance=distance)
+    kw = {"prominence": prominence, "distance": distance}
+    if width and float(width) > 0:
+        kw["width"] = float(width)
+    peaks, _ = find_peaks(amps, **kw)
     peaks = _apply_freq_window(np.array(peaks, dtype=int), freqs, freq_min, freq_max)
+    peaks = _apply_min_amplitude(peaks, amps, min_amplitude)
 
     if peaks is None or len(peaks) == 0:
         return []
@@ -337,6 +371,7 @@ def find_all_peaks(
 
 __all__ = [
     "PEAK_DETECTION_PRESETS",
+    "PRESET_DESCRIPTIONS",
     "get_peak_detection_preset",
     "detect_peak",
     "find_all_peaks",

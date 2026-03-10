@@ -23,6 +23,21 @@ from ..widgets.collapsible_group import CollapsibleGroupBox
 ENGINES = ["diffuse_field", "sh_wave", "ellipticity"]
 
 
+def _format_peak_config_label(cfg):
+    """Return concise summary text for the peak info label."""
+    if not cfg:
+        return ""
+    strategy = cfg.get("strategy", "range_constrained")
+    n_sec = cfg.get("n_secondary", 0)
+    if strategy == "range_constrained":
+        return f"Range-Constrained | {n_sec} secondary"
+    if strategy == "preset":
+        return f"Preset: {cfg.get('preset', '?')} | {n_sec} secondary"
+    sel = cfg.get("select", "leftmost")
+    prom = cfg.get("prominence", 0.2)
+    return f"Advanced: {sel}, prom={prom} | {n_sec} secondary"
+
+
 class ForwardSinglePanel(QWidget):
     """Left-panel content for Forward → Single sub-tab."""
 
@@ -241,11 +256,11 @@ class ForwardSinglePanel(QWidget):
         """Open the Auto Peak Detection settings dialog."""
         try:
             from ..dialogs.auto_peak_settings_dialog import AutoPeakSettingsDialog
-            dlg = AutoPeakSettingsDialog(parent=self)
-            if self._auto_peak_cfg:
-                dlg._load_config(self._auto_peak_cfg)
+            dlg = AutoPeakSettingsDialog(config=self._auto_peak_cfg, parent=self)
             if dlg.exec_() == AutoPeakSettingsDialog.Accepted:
                 self._auto_peak_cfg = dlg.get_config()
+                self._peak_info_label.setText(
+                    _format_peak_config_label(self._auto_peak_cfg))
                 if self._mw:
                     self._mw.log("Auto peak settings updated")
         except Exception as e:
