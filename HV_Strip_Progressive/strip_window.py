@@ -30,6 +30,24 @@ _SETTINGS_FILE = _SETTINGS_DIR / "settings.yaml"
 ENGINES = ["diffuse_field", "sh_wave", "ellipticity"]
 
 
+def _local_gpell_path() -> str:
+    """Return gpell path from local_config, falling back to a generic default."""
+    try:
+        from .local_config import GPELL_PATH
+        return GPELL_PATH
+    except Exception:
+        return r"C:\Geopsy.org\bin\gpell.exe"
+
+
+def _local_git_bash_path() -> str:
+    """Return git-bash path from local_config, falling back to a generic default."""
+    try:
+        from .local_config import GIT_BASH_PATH
+        return GIT_BASH_PATH
+    except Exception:
+        return r"C:\Program Files\Git\git-bash.exe"
+
+
 def _default_hvf_exe() -> str:
     """Resolve HVf executable inside core/engines/diffuse_wave_field/."""
     dwf = Path(__file__).resolve().parent / "core" / "engines" / "diffuse_wave_field"
@@ -126,8 +144,8 @@ def _get_default_config():
                 "nks": 10,
             },
             "ellipticity": {
-                "gpell_path": r"C:\Geopsy.org\bin\gpell.exe",
-                "git_bash_path": r"C:\Users\mersadf\AppData\Local\Programs\Git\git-bash.exe",
+                "gpell_path": _local_gpell_path(),
+                "git_bash_path": _local_git_bash_path(),
                 "fmin": 0.5,
                 "fmax": 20.0,
                 "n_samples": 500,

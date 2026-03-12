@@ -180,6 +180,9 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Local config (user-specific paths — not tracked)
+HV_Strip_Progressive/local_config.py
+
 # Examples
 examples/
 /hvstrip_progressive/Example

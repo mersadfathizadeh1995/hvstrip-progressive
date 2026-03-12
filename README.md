@@ -32,6 +32,16 @@ This package helps identify which subsurface interfaces control HVSR peaks throu
 - Batch Workflow: Turnkey, end-to-end analysis
 - Report Generation: Multi-panel figures, CSV summaries, metadata, and text report
 
+## Screenshots
+
+| HV Curves Overlay | Publication Figure |
+|---|---|
+| ![HV Overlay](images/hv_curves_overlay.png) | ![Publication](images/publication_figure.png) |
+
+| Step 0 — HV Curve | Step 0 — Vs Profile | Waterfall Plot |
+|---|---|---|
+| ![HV Curve](images/step0_hv_curve.png) | ![Vs Profile](images/step0_vs_profile.png) | ![Waterfall](images/waterfall_plot.png) |
+
 ## Installation
 
 ```bash

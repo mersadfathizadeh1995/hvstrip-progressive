@@ -9,8 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-DEFAULT_GPELL_PATH = r"C:\Geopsy.org\bin\gpell.exe"
-DEFAULT_GIT_BASH = r"C:\Users\mersadf\AppData\Local\Programs\Git\git-bash.exe"
+try:
+    from ..local_config import GPELL_PATH as _LOCAL_GPELL, GIT_BASH_PATH as _LOCAL_BASH
+except Exception:
+    _LOCAL_GPELL = _LOCAL_BASH = None
+
+DEFAULT_GPELL_PATH = _LOCAL_GPELL or r"C:\Geopsy.org\bin\gpell.exe"
+DEFAULT_GIT_BASH = _LOCAL_BASH or r"C:\Program Files\Git\git-bash.exe"
 
 
 @dataclass

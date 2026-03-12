@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "hvstrip-progressive"
+version = "2.1.0"
+description = "Progressive layer stripping analysis of HVSR data using diffuse-field theory"
+readme = "README.md"
+license = "GPL-3.0-only"
+requires-python = ">=3.8"
+authors = [
+    { name = "Mersad Fathizadeh", email = "mersadf@uark.edu" },
+    { name = "Clinton Wood", email = "mycmwood@uark.edu" },
+]
+keywords = [
+    "HVSR",
+    "seismology",
+    "geophysics",
+    "layer-stripping",
+    "diffuse-field",
+    "site-characterization",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "pandas>=2.0.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "PyYAML>=6.0",
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+gui = [
+    "PyQt5>=5.15.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "black",
+    "ruff",
+]
+
+[project.urls]
+Homepage = "https://github.com/mersadfathizadeh1995/hvstrip-progressive"
+Repository = "https://github.com/mersadfathizadeh1995/hvstrip-progressive"
+Issues = "https://github.com/mersadfathizadeh1995/hvstrip-progressive/issues"
+
+[tool.setuptools.packages.find]
+include = ["HV_Strip_Progressive*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.black]
+line-length = 99
+target-version = ["py38"]
+
+[tool.ruff]
+line-length = 99
+target-version = "py38"
