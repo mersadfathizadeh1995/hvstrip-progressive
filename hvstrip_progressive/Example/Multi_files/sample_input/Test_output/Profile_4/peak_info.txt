@@ -1,3 +1,0 @@
-f0_Frequency_Hz,1.711423
-f0_Amplitude,3.241659
-f0_Index,31

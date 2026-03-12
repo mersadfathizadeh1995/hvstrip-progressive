@@ -1,2 +1,0 @@
-Median_f0_Frequency_Hz,1.594188
-Median_f0_Amplitude,3.092678

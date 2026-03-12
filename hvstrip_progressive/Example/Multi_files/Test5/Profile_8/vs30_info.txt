@@ -1,4 +1,0 @@
-Vs30_m_per_s,269.57
-Target_Depth_m,30.0
-Actual_Depth_m,30.0
-Extrapolated,False
