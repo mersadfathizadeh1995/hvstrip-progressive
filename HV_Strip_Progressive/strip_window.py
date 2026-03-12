@@ -420,6 +420,7 @@ class HVStripWindow(QMainWindow):
         The report generator reads ``Peak_Frequency_Hz`` and ``Peak_Amplitude``
         from these summary files, so updating them ensures the regenerated
         report reflects the user's peak selections.
+        Also persists Vs30/VsAvg/bedrock data to ``vs_results.json``.
         """
         import csv as _csv
         result = getattr(self, '_last_result', None)
@@ -429,6 +430,9 @@ class HVStripWindow(QMainWindow):
         if not strip_dir:
             return
         strip_path = Path(strip_dir)
+        
+        vs_data = {}
+        
         for step_name, pdata in peak_data.items():
             f0 = pdata.get("f0")
             if not f0:
@@ -445,7 +449,33 @@ class HVStripWindow(QMainWindow):
                 # Create a minimal summary CSV so the reporter picks it up
                 sf = step_folder / 'step_summary.csv'
                 self._create_minimal_summary_csv(sf, step_name, f0[0], f0[1])
+            
+            # Collect Vs data for persistence
+            vs30 = pdata.get("vs30")
+            vsavg = pdata.get("vsavg")
+            bedrock_depth = pdata.get("bedrock_depth")
+            if vs30 or vsavg or bedrock_depth:
+                vs_data[step_name] = {
+                    "vs30": vs30,
+                    "vsavg": vsavg,
+                    "bedrock_depth": bedrock_depth
+                }
+        
+        if vs_data:
+            self._persist_vs_data(strip_path, vs_data)
+        
         self.log(f"Peak data written to {len(peak_data)} step folders")
+
+    def _persist_vs_data(self, strip_path: Path, vs_data: dict):
+        """Write vs_results.json alongside step folders for report regeneration."""
+        import json
+        vs_path = strip_path / 'vs_results.json'
+        try:
+            with open(vs_path, 'w') as f:
+                json.dump(vs_data, f, indent=2, default=str)
+            self.log(f"Vs data saved to {vs_path.name}")
+        except Exception as e:
+            self.log(f"Failed to save vs_data: {e}")
 
     @staticmethod
     def _update_summary_csv(csv_path, peak_freq, peak_amp):
@@ -493,7 +523,7 @@ class HVStripWindow(QMainWindow):
             pass
 
     def _regenerate_strip_report(self):
-        """Regenerate comprehensive report (reads updated CSVs from disk)."""
+        """Regenerate comprehensive report (reads updated CSVs + vs_results.json from disk)."""
         result = getattr(self, '_last_result', None)
         if not result:
             return
@@ -505,7 +535,7 @@ class HVStripWindow(QMainWindow):
             reporter = ProgressiveStrippingReporter(
                 strip_dir, output_dir=str(Path(strip_dir).parent))
             reporter.generate_comprehensive_report()
-            self.log("Report regenerated with updated peaks")
+            self.log("Report regenerated with updated peaks and Vs data")
         except Exception as e:
             self.log(f"Report regen error: {e}")
 

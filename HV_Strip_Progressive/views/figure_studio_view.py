@@ -552,33 +552,39 @@ class FigureStudioView(QWidget):
         """Write step results summary to CSV."""
         if not self._reporter:
             return
-        # Collect data from reporter
         import csv
-        steps_data = self._reporter._load_step_data()
+        steps_data = self._reporter.step_data
         if not steps_data:
             return
+        vs_data = getattr(self._reporter, '_vs_data', {})
         with open(path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["Step", "Layers", "f0 (Hz)", "Amplitude",
-                            "Vs30", "VsAvg", "Status"])
+                            "Vs30", "VsAvg", "Bedrock_Depth", "Status"])
             for sd in steps_data:
                 name = sd.get("name", "")
-                n_layers = sd.get("n_layers", "?")
-                pf = sd.get("peak_frequency", "")
-                pa = sd.get("peak_amplitude", "")
-                vs30 = sd.get("vs30", "")
+                n_layers = sd.get("n_finite_layers", "?")
+                hv = sd.get("hv_data", {})
+                pf = hv.get("peak_frequency", "")
+                pa = hv.get("peak_amplitude", "")
+                vs_info = vs_data.get(name, {})
+                vs30 = vs_info.get("vs30")
+                vsavg = vs_info.get("vsavg")
+                bd = vs_info.get("bedrock_depth")
                 writer.writerow([name, n_layers,
                                 f"{pf:.4f}" if pf else "",
                                 f"{pa:.3f}" if pa else "",
                                 f"{vs30:.0f}" if vs30 else "",
-                                "", "OK"])
+                                f"{vsavg:.0f}" if vsavg else "",
+                                f"{bd:.2f}" if bd else "",
+                                "OK"])
 
     def _write_peak_data_csv(self, path):
         """Write detailed peak data (primary + secondary) to CSV."""
         if not self._reporter:
             return
         import csv
-        steps_data = self._reporter._load_step_data()
+        steps_data = self._reporter.step_data
         if not steps_data:
             return
         with open(path, "w", newline="") as f:
@@ -587,8 +593,9 @@ class FigureStudioView(QWidget):
                             "Amplitude", "Index"])
             for sd in steps_data:
                 name = sd.get("name", "")
-                pf = sd.get("peak_frequency")
-                pa = sd.get("peak_amplitude")
+                hv = sd.get("hv_data", {})
+                pf = hv.get("peak_frequency")
+                pa = hv.get("peak_amplitude")
                 if pf:
                     writer.writerow([name, "primary",
                                     f"{pf:.4f}", f"{pa:.3f}" if pa else "",

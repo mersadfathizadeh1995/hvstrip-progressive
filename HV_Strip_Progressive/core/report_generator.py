@@ -127,7 +127,8 @@ def _annotate_peaks_staircase(ax, peaks, colors, annot_size, off_x, off_y,
 class ProgressiveStrippingReporter:
     """Generate comprehensive reports from progressive layer stripping analysis."""
     
-    def __init__(self, strip_directory: str, output_dir: Optional[str] = None):
+    def __init__(self, strip_directory: str, output_dir: Optional[str] = None,
+                 vs_data: Optional[Dict[str, Dict]] = None):
         """
         Initialize the reporter.
         
@@ -137,6 +138,10 @@ class ProgressiveStrippingReporter:
             Path to the 'strip' directory containing StepX_Y-layer folders
         output_dir : str, optional
             Output directory for reports (creates 'reports' if None)
+        vs_data : dict, optional
+            Mapping of step_name → {"vs30": float, "vsavg": float,
+            "bedrock_depth": float}.  If *None*, the constructor tries to
+            load ``vs_results.json`` from *strip_directory*.
         """
         self.strip_dir = Path(strip_directory)
         if not self.strip_dir.exists():
@@ -153,8 +158,23 @@ class ProgressiveStrippingReporter:
         self.step_data = self._collect_step_data()
         self.analysis = self._analyze_data()
         
+        # Load Vs data (Vs30 / VsAvg per step)
+        self._vs_data: Dict[str, Dict] = vs_data or self._load_vs_data()
+        
         print(f"[*] Initialized reporter with {len(self.step_data)} steps")
         print(f"[>] Output directory: {self.output_dir}")
+
+    def _load_vs_data(self) -> Dict[str, Dict]:
+        """Load ``vs_results.json`` from the strip directory if present."""
+        vs_path = self.strip_dir / 'vs_results.json'
+        if vs_path.exists():
+            try:
+                import json
+                with open(vs_path, 'r') as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
     
     def _collect_step_data(self) -> List[Dict]:
         """Collect data from all step folders."""
@@ -445,7 +465,8 @@ class ProgressiveStrippingReporter:
                 'step', 'n_finite_layers', 'total_thickness_m', 'peak_freq_hz', 
                 'peak_amplitude', 'freq_shift_pct', 'deepest_interface_depth_m',
                 'deepest_vs_above', 'deepest_vs_below', 'deepest_vs_contrast',
-                'deepest_impedance_contrast', 'max_impedance_contrast_in_model'
+                'deepest_impedance_contrast', 'max_impedance_contrast_in_model',
+                'vs30_m_s', 'vsavg_m_s', 'bedrock_depth_m'
             ]
             
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -466,6 +487,13 @@ class ProgressiveStrippingReporter:
                 initial_freq = self.analysis.get('initial_frequency', 1.0)
                 freq_shift = (hv.get('peak_frequency', 0) - initial_freq) / initial_freq * 100
                 
+                # Vs data for this step
+                step_name = step_data.get('name', '')
+                vs_info = self._vs_data.get(step_name, {})
+                vs30 = vs_info.get('vs30')
+                vsavg = vs_info.get('vsavg')
+                bedrock_d = vs_info.get('bedrock_depth')
+                
                 writer.writerow({
                     'step': step_data['step'],
                     'n_finite_layers': step_data['n_finite_layers'],
@@ -478,7 +506,10 @@ class ProgressiveStrippingReporter:
                     'deepest_vs_below': f"{deepest.get('vs_below', 0):.0f}",
                     'deepest_vs_contrast': f"{deepest.get('vs_contrast', 0):.2f}",
                     'deepest_impedance_contrast': f"{deepest.get('impedance_contrast', 0):.2f}",
-                    'max_impedance_contrast_in_model': f"{max_impedance:.2f}"
+                    'max_impedance_contrast_in_model': f"{max_impedance:.2f}",
+                    'vs30_m_s': f"{vs30:.1f}" if vs30 else "",
+                    'vsavg_m_s': f"{vsavg:.1f}" if vsavg else "",
+                    'bedrock_depth_m': f"{bedrock_d:.2f}" if bedrock_d else ""
                 })
         
         return csv_path
@@ -814,6 +845,18 @@ class ProgressiveStrippingReporter:
             ['Total shift (%)', f"{self.analysis.get('total_frequency_shift_pct', 0):.1f}"],
             ['Steps analyzed', f"{self.analysis.get('n_steps', 0)}"]
         ]
+        
+        # Add Vs30 / VsAvg if available
+        last_vs = self._last_step_vs()
+        if last_vs:
+            vs30 = last_vs.get('vs30')
+            vsavg = last_vs.get('vsavg')
+            bd = last_vs.get('bedrock_depth')
+            if vs30:
+                table_data.append(['Vs30 (m/s)', f"{vs30:.1f}"])
+            if vsavg:
+                label = f"VsAvg to {bd:.1f} m" if bd else "VsAvg (bedrock)"
+                table_data.append([f'{label} (m/s)', f"{vsavg:.1f}"])
         
         table = ax4.table(cellText=table_data, colLabels=['Parameter', 'Value'],
                          cellLoc='left', loc='center', colWidths=[0.6, 0.4])
@@ -1271,13 +1314,29 @@ class ProgressiveStrippingReporter:
                 max_imp = analysis['max_impedance_interface']
                 f.write(f"Maximum impedance contrast: {max_imp.get('impedance_contrast', 0):.2f} ")
                 f.write(f"at {max_imp.get('depth', 0):.1f} m depth\n")
+            
+            # Vs30 / VsAvg for last step with data
+            if self._vs_data:
+                last_vs = self._last_step_vs()
+                if last_vs:
+                    vs30 = last_vs.get('vs30')
+                    vsavg = last_vs.get('vsavg')
+                    bd = last_vs.get('bedrock_depth')
+                    if vs30:
+                        f.write(f"Vs30: {vs30:.1f} m/s\n")
+                    if vsavg and bd:
+                        f.write(f"VsAvg (to bedrock at {bd:.1f} m): {vsavg:.1f} m/s\n")
             f.write("\n")
             
             # Detailed Step Analysis
+            has_vs = bool(self._vs_data)
             f.write("DETAILED STEP ANALYSIS\n")
             f.write("-"*30 + "\n")
-            f.write(f"{'Step':<5} {'Layers':<7} {'Depth(m)':<8} {'f0(Hz)':<8} {'Amplitude':<10} {'Shift(%)':<8}\n")
-            f.write("-"*50 + "\n")
+            hdr = f"{'Step':<5} {'Layers':<7} {'Depth(m)':<8} {'f0(Hz)':<8} {'Amplitude':<10} {'Shift(%)':<8}"
+            if has_vs:
+                hdr += f" {'Vs30':<8} {'VsAvg':<8}"
+            f.write(hdr + "\n")
+            f.write("-"*(50 + (18 if has_vs else 0)) + "\n")
             
             for i, step_data in enumerate(self.step_data):
                 model = step_data['model']
@@ -1286,9 +1345,16 @@ class ProgressiveStrippingReporter:
                 deepest_depth = interfaces[-1]['depth'] if interfaces else 0
                 freq_shift = analysis['frequency_shifts'][i] if i < len(analysis['frequency_shifts']) else 0
                 
-                f.write(f"{step_data['step']:<5} {step_data['n_finite_layers']:<7} ")
-                f.write(f"{deepest_depth:<8.1f} {hv.get('peak_frequency', 0):<8.3f} ")
-                f.write(f"{hv.get('peak_amplitude', 0):<10.2f} {freq_shift:<8.1f}\n")
+                line = (f"{step_data['step']:<5} {step_data['n_finite_layers']:<7} "
+                        f"{deepest_depth:<8.1f} {hv.get('peak_frequency', 0):<8.3f} "
+                        f"{hv.get('peak_amplitude', 0):<10.2f} {freq_shift:<8.1f}")
+                
+                if has_vs:
+                    vs_info = self._vs_data.get(step_data.get('name', ''), {})
+                    vs30_s = f"{vs_info['vs30']:.0f}" if vs_info.get('vs30') else "-"
+                    vsavg_s = f"{vs_info['vsavg']:.0f}" if vs_info.get('vsavg') else "-"
+                    line += f" {vs30_s:<8} {vsavg_s:<8}"
+                f.write(line + "\n")
             
             f.write("\n")
             
@@ -1306,9 +1372,29 @@ class ProgressiveStrippingReporter:
                 f.write(f"• Maximum impedance contrast of {max_contrast['impedance_contrast']:.2f} ")
                 f.write(f"at {max_contrast['depth']:.1f} m depth\n")
             
+            if self._vs_data:
+                last_vs = self._last_step_vs()
+                if last_vs:
+                    vs30 = last_vs.get('vs30')
+                    vsavg = last_vs.get('vsavg')
+                    if vs30:
+                        f.write(f"• Final Vs30 = {vs30:.1f} m/s\n")
+                    if vsavg:
+                        f.write(f"• Final VsAvg (bedrock) = {vsavg:.1f} m/s\n")
+            
             f.write("• Analysis completed successfully\n")
         
         return report_path
+    
+    def _last_step_vs(self) -> Optional[Dict]:
+        """Return Vs data for the last stripping step that has it."""
+        if not self._vs_data:
+            return None
+        for sd in reversed(self.step_data):
+            name = sd.get('name', '')
+            if name in self._vs_data and self._vs_data[name]:
+                return self._vs_data[name]
+        return None
     
     def _create_metadata(self) -> Path:
         """Create analysis metadata JSON file."""
@@ -1477,6 +1563,21 @@ class ProgressiveStrippingReporter:
             
             ax_vs.set_xlim(0, max(plot_vs) * 1.2 if plot_vs else 1000)
             ax_vs.invert_yaxis()
+            
+            # Vs30 / VsAvg horizontal annotations
+            vs_info = self._vs_data.get(step_name, {})
+            vs30 = vs_info.get('vs30')
+            vsavg = vs_info.get('vsavg')
+            bd = vs_info.get('bedrock_depth')
+            xlim_max = ax_vs.get_xlim()[1]
+            if vs30:
+                ax_vs.axhline(y=30, color='blue', linestyle='--', alpha=0.6, linewidth=1)
+                ax_vs.text(xlim_max * 0.98, 30, f'Vs30={vs30:.0f}',
+                          fontsize=6, color='blue', ha='right', va='bottom')
+            if vsavg and bd:
+                ax_vs.axhline(y=bd, color='green', linestyle='--', alpha=0.6, linewidth=1)
+                ax_vs.text(xlim_max * 0.98, bd, f'VsAvg={vsavg:.0f}',
+                          fontsize=6, color='green', ha='right', va='bottom')
         
         ax_vs.set_xlabel('Vs (m/s)', fontsize=8)
         ax_vs.set_ylabel('Depth (m)', fontsize=8)
