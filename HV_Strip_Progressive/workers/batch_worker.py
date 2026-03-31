@@ -27,7 +27,7 @@ class BatchWorker(QThread):
         results = []
         total = len(self._file_paths)
         try:
-            from core.batch_workflow import run_complete_workflow
+            from ..core.batch_workflow import run_complete_workflow
 
             for i, fpath in enumerate(self._file_paths):
                 if self._cancelled:

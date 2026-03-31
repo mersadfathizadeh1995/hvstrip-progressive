@@ -191,14 +191,14 @@ class InputPanel(QWidget):
     def _browse_model_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Model File", "",
-            "Model Files (*.txt *.csv);;All (*)")
+            "All Supported (*.txt *.csv *.xlsx);;Text (*.txt);;CSV (*.csv);;Excel (*.xlsx);;All (*)")
         if path:
             self._browse_model_file_at(path)
 
     def _browse_model_file_at(self, path):
         self._file_edit.setText(path)
         try:
-            from core.soil_profile import SoilProfile
+            from ..core.soil_profile import SoilProfile
             prof = SoilProfile.from_auto(path)
             self._active_profile = prof
             self._preview.set_profile(prof)
@@ -231,7 +231,7 @@ class InputPanel(QWidget):
             QMessageBox.warning(self, "Error", "Select a Vs file first.")
             return
         try:
-            from core.soil_profile import SoilProfile
+            from ..core.soil_profile import SoilProfile
             vp = self._din_vp.text().strip() or None
             rho = self._din_rho.text().strip() or None
             prof = SoilProfile.from_dinver_files(vs_path, vp, rho)
@@ -255,10 +255,11 @@ class InputPanel(QWidget):
 
     def _editor_open(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open Profile", "", "Model Files (*.txt *.csv);;All (*)")
+            self, "Open Profile", "",
+            "All Supported (*.txt *.csv *.xlsx);;Text (*.txt);;CSV (*.csv);;Excel (*.xlsx);;All (*)")
         if path:
             try:
-                from core.soil_profile import SoilProfile
+                from ..core.soil_profile import SoilProfile
                 prof = SoilProfile.from_auto(path)
                 self._layer_table.set_profile(prof)
                 self._on_editor_changed()

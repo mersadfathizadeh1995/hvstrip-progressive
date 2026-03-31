@@ -327,7 +327,7 @@ class HomePage(QWidget):
                 QMessageBox.warning(self, "Error", "Please select a Vs file.")
                 return
             try:
-                from core.soil_profile import SoilProfile
+                from ..core.soil_profile import SoilProfile
                 vp = self._din_vp.text().strip() or None
                 rho = self._din_rho.text().strip() or None
                 prof = SoilProfile.from_dinver_files(vs_path, vp, rho)

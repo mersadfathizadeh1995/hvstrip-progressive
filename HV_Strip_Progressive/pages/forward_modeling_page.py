@@ -152,6 +152,18 @@ class ForwardModelingPage(QWidget):
         self._file_status = QLabel("")
         layout.addWidget(self._file_status)
 
+        # "Send to Editor" button — lets user fine-tune auto-computed Vp/density
+        edit_row = QHBoxLayout()
+        self._send_to_editor_btn = QPushButton("📝 Send to Profile Editor (edit Vp/density)")
+        self._send_to_editor_btn.setToolTip(
+            "Load the profile into the editor tab where you can manually adjust\n"
+            "auto-computed Vp, density, and Poisson's ratio values")
+        self._send_to_editor_btn.setEnabled(False)
+        self._send_to_editor_btn.clicked.connect(self._send_to_editor)
+        edit_row.addWidget(self._send_to_editor_btn)
+        edit_row.addStretch()
+        layout.addLayout(edit_row)
+
         self._file_preview = ProfilePreviewWidget()
         layout.addWidget(self._file_preview)
         layout.addStretch()
@@ -391,13 +403,21 @@ class ForwardModelingPage(QWidget):
                 from ..core.soil_profile import SoilProfile
                 prof = SoilProfile.from_auto(path)
                 self._file_preview.set_profile(prof)
+                self._active_profile = prof
                 n = len([L for L in prof.layers if not L.is_halfspace])
+                # Check if Vp/density were auto-computed
+                has_missing = any(L.vp is None for L in prof.layers)
+                note = ""
+                if has_missing:
+                    note = " — <i>Vp/density auto-computed from Vs</i>"
                 self._file_status.setText(
-                    f"<span style='color:green;'>✓ Loaded: {n} layers</span>")
+                    f"<span style='color:green;'>✓ Loaded: {n} layers{note}</span>")
+                self._send_to_editor_btn.setEnabled(True)
             except Exception as e:
                 self._file_preview._draw_empty()
                 self._file_status.setText(
                     f"<span style='color:red;'>✗ {e}</span>")
+                self._send_to_editor_btn.setEnabled(False)
 
     def _open_profile_loader(self):
         """Open the advanced ProfileLoaderDialog (Dinver 3-file, etc.)."""
@@ -415,9 +435,20 @@ class ForwardModelingPage(QWidget):
                     n = len([L for L in prof.layers if not L.is_halfspace])
                     self._file_status.setText(
                         f"<span style='color:green;'>✓ Loaded via {data.get('source', 'dialog')}: {n} layers</span>")
+                    self._send_to_editor_btn.setEnabled(True)
                 except Exception as e:
                     self._file_status.setText(
                         f"<span style='color:red;'>✗ {e}</span>")
+                    self._send_to_editor_btn.setEnabled(False)
+
+    def _send_to_editor(self):
+        """Send the loaded profile to the Profile Editor tab for manual editing."""
+        if self._active_profile is None:
+            return
+        self._layer_table.set_profile(self._active_profile)
+        self._on_editor_profile_changed()
+        # Switch to editor tab (index 1)
+        self._input_tabs.setCurrentIndex(1)
 
     # ── Editor operations ───────────────────────────────────────
     def _editor_new(self):
