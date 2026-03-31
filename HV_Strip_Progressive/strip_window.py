@@ -223,18 +223,63 @@ class HVStripWindow(QMainWindow):
     # ══════════════════════════════════════════════════════════════
 
     def _apply_project_context(self):
-        """Apply project context — set output dir, update title."""
+        """Apply project context — set output dir, update title, restore state."""
         ctx = self._project_context
         if not ctx:
             return
         project = ctx.get('project')
         profile_id = ctx.get('profile_id', '')
-        if project:
-            self.setWindowTitle(
-                f"HV Strip — {project.name} — {profile_id}")
-            # Set last strip dir to project profile folder
-            profile_dir = project.ensure_module_dir('hv_strip', profile_id)
-            self._last_strip_dir = str(profile_dir)
+        if not project:
+            return
+
+        self.setWindowTitle(
+            f"HV Strip — {project.name} — {profile_id}")
+        profile_dir = project.ensure_module_dir('hv_strip', profile_id)
+        self._last_strip_dir = str(profile_dir)
+
+        # Restore saved state
+        try:
+            from hvsr_pro.packages.project_manager.module_state.hvstrip_state_io import (
+                has_hvstrip_state, load_hvstrip_state,
+            )
+            if has_hvstrip_state(profile_dir):
+                state = load_hvstrip_state(profile_dir)
+
+                # Restore config (deep-merge onto defaults)
+                saved_cfg = state.get("config", {})
+                if saved_cfg:
+                    self._deep_merge_config(self._config, saved_cfg)
+                    self._apply_saved_config()
+
+                # Restore extra metadata
+                extra = state.get("extra", {})
+                if extra.get("loaded_profile_path"):
+                    self._loaded_profile_path = extra["loaded_profile_path"]
+                if extra.get("active_mode"):
+                    try:
+                        self._switch_mode(extra["active_mode"])
+                    except Exception:
+                        pass
+
+                # Restore results
+                results = state.get("results")
+                if results is not None:
+                    self._last_result = results
+                    self.update_strip_results(results)
+
+                self.statusBar().showMessage(
+                    f"Restored strip state: {profile_id}", 5000)
+        except Exception as e:
+            self.statusBar().showMessage(
+                f"Could not restore state: {e}", 5000)
+
+    def _deep_merge_config(self, base, override):
+        """Recursively merge *override* dict into *base* dict in-place."""
+        for key, val in override.items():
+            if key in base and isinstance(base[key], dict) and isinstance(val, dict):
+                self._deep_merge_config(base[key], val)
+            else:
+                base[key] = val
 
     def _save_project_state(self):
         """Persist state into the project folder on close."""
@@ -253,6 +298,11 @@ class HVStripWindow(QMainWindow):
                 profile_dir,
                 config=self._config,
                 results=self._last_result,
+                extra={
+                    "loaded_profile_path": self._loaded_profile_path,
+                    "active_mode": self._active_mode,
+                    "last_strip_dir": self._last_strip_dir,
+                },
             )
             project.log_activity('hv_strip', f'State saved for {profile_id}')
             project.save()
