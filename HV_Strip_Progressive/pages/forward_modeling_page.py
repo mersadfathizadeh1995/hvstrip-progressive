@@ -80,10 +80,9 @@ class ForwardModelingPage(QWidget):
         left_w = QWidget()
         left_layout = QVBoxLayout(left_w)
 
-        # Input Tabs
+        # Input Tabs (simplified: Load Model | Profile Editor | Multiple)
         self._input_tabs = QTabWidget()
-        self._input_tabs.addTab(self._build_file_tab(), "From File")
-        self._input_tabs.addTab(self._build_dinver_tab(), "From Dinver")
+        self._input_tabs.addTab(self._build_load_tab(), "Load Model")
         self._input_tabs.addTab(self._build_editor_tab(), "Profile Editor")
         self._input_tabs.addTab(self._build_multi_tab(), "Multiple Profiles")
         left_layout.addWidget(self._input_tabs)
@@ -123,66 +122,38 @@ class ForwardModelingPage(QWidget):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
 
-    # ── Tab 0: From File ────────────────────────────────────────
-    def _build_file_tab(self):
+    # ── Tab 0: Load Model (unified) ────────────────────────────────
+    def _build_load_tab(self):
         w = QWidget()
         layout = QVBoxLayout(w)
+        layout.addWidget(QLabel("Load a velocity model from any supported format "
+                                "(HVf .txt, Dinver .txt, CSV, Excel):"))
 
+        # Browse row
         row = QHBoxLayout()
         row.addWidget(QLabel("Model File:"))
         self._file_edit = QLineEdit()
-        self._file_edit.setPlaceholderText("Select HVf model file (.txt)")
+        self._file_edit.setPlaceholderText("Browse for any model file (.txt, .csv, .xlsx)")
         row.addWidget(self._file_edit)
         btn = QPushButton("Browse...")
         btn.clicked.connect(self._browse_model_file)
         row.addWidget(btn)
         layout.addLayout(row)
 
+        # Advanced loader button (opens ProfileLoaderDialog for Dinver 3-file import)
+        adv_row = QHBoxLayout()
+        adv_btn = QPushButton("Advanced Import (Dinver 3-file)...")
+        adv_btn.setToolTip("Open advanced loader for Dinver multi-file import")
+        adv_btn.clicked.connect(self._open_profile_loader)
+        adv_row.addWidget(adv_btn)
+        adv_row.addStretch()
+        layout.addLayout(adv_row)
+
+        self._file_status = QLabel("")
+        layout.addWidget(self._file_status)
+
         self._file_preview = ProfilePreviewWidget()
         layout.addWidget(self._file_preview)
-        layout.addStretch()
-        return w
-
-    # ── Tab 1: From Dinver ──────────────────────────────────────
-    def _build_dinver_tab(self):
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.addWidget(QLabel("Load velocity model from Dinver output files:"))
-
-        form = QFormLayout()
-        self._dinver_vs = QLineEdit()
-        btn_vs = QPushButton("...")
-        btn_vs.setFixedWidth(30)
-        btn_vs.clicked.connect(lambda: self._browse_dinver("vs"))
-        r = QHBoxLayout(); r.addWidget(self._dinver_vs); r.addWidget(btn_vs)
-        form.addRow("Vs File:", r)
-
-        self._dinver_vp = QLineEdit()
-        self._dinver_vp.setPlaceholderText("Optional")
-        btn_vp = QPushButton("...")
-        btn_vp.setFixedWidth(30)
-        btn_vp.clicked.connect(lambda: self._browse_dinver("vp"))
-        r2 = QHBoxLayout(); r2.addWidget(self._dinver_vp); r2.addWidget(btn_vp)
-        form.addRow("Vp File:", r2)
-
-        self._dinver_rho = QLineEdit()
-        self._dinver_rho.setPlaceholderText("Optional")
-        btn_rho = QPushButton("...")
-        btn_rho.setFixedWidth(30)
-        btn_rho.clicked.connect(lambda: self._browse_dinver("rho"))
-        r3 = QHBoxLayout(); r3.addWidget(self._dinver_rho); r3.addWidget(btn_rho)
-        form.addRow("Density File:", r3)
-        layout.addLayout(form)
-
-        btn_load = QPushButton("Load Dinver Profile")
-        btn_load.clicked.connect(self._load_dinver_profile)
-        layout.addWidget(btn_load)
-
-        self._dinver_preview = ProfilePreviewWidget()
-        layout.addWidget(self._dinver_preview)
-
-        self._dinver_status = QLabel("")
-        layout.addWidget(self._dinver_status)
         layout.addStretch()
         return w
 
@@ -384,22 +355,17 @@ class ForwardModelingPage(QWidget):
     # ═══════════════════════════════════════════════════════════
     def _get_active_profile(self):
         """Return the profile from the current input tab and a temp model path."""
-        from core.soil_profile import SoilProfile
+        from ..core.soil_profile import SoilProfile
         tab_idx = self._input_tabs.currentIndex()
 
-        if tab_idx == 0:  # From File
+        if tab_idx == 0:  # Load Model
             path = self._file_edit.text().strip()
             if not path or not os.path.isfile(path):
                 raise ValueError("Please select a valid model file.")
             profile = SoilProfile.from_auto(path)
             return profile, path
 
-        elif tab_idx == 1:  # From Dinver
-            if self._active_profile is None:
-                raise ValueError("Please load a Dinver profile first.")
-            return self._active_profile, self._temp_model_path
-
-        elif tab_idx == 2:  # Profile Editor
+        elif tab_idx == 1:  # Profile Editor
             profile = self._layer_table.get_profile()
             valid, msgs = profile.validate()
             if not valid:
@@ -410,63 +376,48 @@ class ForwardModelingPage(QWidget):
             self._temp_model_path = tmp.name
             return profile, tmp.name
 
-        elif tab_idx == 3:  # Multiple
+        elif tab_idx == 2:  # Multiple
             raise ValueError("Use 'Run All Profiles' for multiple profiles.")
 
         raise ValueError("Unknown input tab.")
 
     def _browse_model_file(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select Model File", "", "Model Files (*.txt *.csv);;All (*)")
+            self, "Select Model File", "",
+            "All Supported (*.txt *.csv *.xlsx);;Text (*.txt);;CSV (*.csv);;Excel (*.xlsx);;All (*)")
         if path:
             self._file_edit.setText(path)
             try:
-                from core.soil_profile import SoilProfile
+                from ..core.soil_profile import SoilProfile
                 prof = SoilProfile.from_auto(path)
                 self._file_preview.set_profile(prof)
+                n = len([L for L in prof.layers if not L.is_halfspace])
+                self._file_status.setText(
+                    f"<span style='color:green;'>✓ Loaded: {n} layers</span>")
             except Exception as e:
                 self._file_preview._draw_empty()
+                self._file_status.setText(
+                    f"<span style='color:red;'>✗ {e}</span>")
 
-    def _browse_dinver(self, file_type):
-        path, _ = QFileDialog.getOpenFileName(
-            self, f"Select {file_type.upper()} File", "", "Text Files (*.txt);;All (*)")
-        if not path:
-            return
-        target = {"vs": self._dinver_vs, "vp": self._dinver_vp, "rho": self._dinver_rho}[file_type]
-        target.setText(path)
-        # Auto-detect companion files
-        if file_type == "vs":
-            base = path.replace("_vs.txt", "").replace("_Vs.txt", "")
-            for suffix, edit in [("_vp.txt", self._dinver_vp), ("_rho.txt", self._dinver_rho)]:
-                candidate = base + suffix
-                if os.path.isfile(candidate) and not edit.text():
-                    edit.setText(candidate)
-
-    def _load_dinver_profile(self):
-        vs_path = self._dinver_vs.text().strip()
-        if not vs_path or not os.path.isfile(vs_path):
-            QMessageBox.warning(self, "Error", "Please select a valid Vs file.")
-            return
-        try:
-            from core.soil_profile import SoilProfile
-            vp_path = self._dinver_vp.text().strip() or None
-            rho_path = self._dinver_rho.text().strip() or None
-            profile = SoilProfile.from_dinver_files(vs_path, vp_path, rho_path)
-            self._active_profile = profile
-            self._dinver_preview.set_profile(profile)
-
-            # Write temp HVf file
-            tmp = tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w")
-            tmp.write(profile.to_hvf_format())
-            tmp.close()
-            self._temp_model_path = tmp.name
-
-            n_layers = len([L for L in profile.layers if not L.is_halfspace])
-            total_d = profile.get_total_thickness()
-            self._dinver_status.setText(
-                f"<span style='color:green;'>✓ Loaded: {n_layers} layers, total depth {total_d:.1f} m</span>")
-        except Exception as e:
-            self._dinver_status.setText(f"<span style='color:red;'>✗ Error: {e}</span>")
+    def _open_profile_loader(self):
+        """Open the advanced ProfileLoaderDialog (Dinver 3-file, etc.)."""
+        from ..dialogs.profile_loader_dialog import ProfileLoaderDialog
+        dlg = ProfileLoaderDialog(self)
+        if dlg.exec_() == ProfileLoaderDialog.Accepted:
+            data = dlg.get_data()
+            if data and "path" in data:
+                self._file_edit.setText(data["path"])
+                try:
+                    from ..core.soil_profile import SoilProfile
+                    prof = SoilProfile.from_auto(data["path"])
+                    self._file_preview.set_profile(prof)
+                    self._active_profile = prof
+                    n = len([L for L in prof.layers if not L.is_halfspace])
+                    self._file_status.setText(
+                        f"<span style='color:green;'>✓ Loaded via {data.get('source', 'dialog')}: {n} layers</span>")
+                except Exception as e:
+                    self._file_status.setText(
+                        f"<span style='color:red;'>✗ {e}</span>")
 
     # ── Editor operations ───────────────────────────────────────
     def _editor_new(self):
@@ -475,10 +426,11 @@ class ForwardModelingPage(QWidget):
 
     def _editor_open(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open Profile", "", "Model Files (*.txt *.csv);;All (*)")
+            self, "Open Profile", "",
+            "All Supported (*.txt *.csv *.xlsx);;Text (*.txt);;CSV (*.csv);;Excel (*.xlsx);;All (*)")
         if path:
             try:
-                from core.soil_profile import SoilProfile
+                from ..core.soil_profile import SoilProfile
                 prof = SoilProfile.from_auto(path)
                 self._layer_table.set_profile(prof)
                 self._on_editor_profile_changed()
@@ -516,15 +468,17 @@ class ForwardModelingPage(QWidget):
     # ── Multiple profiles ───────────────────────────────────────
     def _multi_add_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Add Profile Files", "", "Model Files (*.txt);;All (*)")
+            self, "Add Profile Files", "",
+            "All Supported (*.txt *.csv *.xlsx);;Text (*.txt);;CSV (*.csv);;Excel (*.xlsx);;All (*)")
         for p in paths:
             self._multi_list.addItem(p)
 
     def _multi_add_dir(self):
         d = QFileDialog.getExistingDirectory(self, "Select Directory")
         if d:
-            for f in sorted(Path(d).glob("*.txt")):
-                self._multi_list.addItem(str(f))
+            for ext in ("*.txt", "*.csv", "*.xlsx"):
+                for f in sorted(Path(d).glob(ext)):
+                    self._multi_list.addItem(str(f))
 
     def _multi_clear(self):
         self._multi_list.clear()
@@ -600,7 +554,7 @@ class ForwardModelingPage(QWidget):
         vs30_str = ""
         if self._active_profile:
             try:
-                from core.vs_average import compute_vs30
+                from ..core.vs_average import compute_vs30
                 vs30 = compute_vs30(self._active_profile)
                 vs30_str = f"\nVs30 = {vs30:.1f} m/s"
             except Exception:

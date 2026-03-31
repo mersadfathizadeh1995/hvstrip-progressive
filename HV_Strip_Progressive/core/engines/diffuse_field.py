@@ -164,21 +164,16 @@ class DiffuseFieldEngine(BaseForwardEngine):
 
         t0 = time.perf_counter()
 
-        with tempfile.TemporaryDirectory() as tdir:
+        # Create temp dir for model file and output only (exe stays in place)
+        tdir = tempfile.mkdtemp(prefix="hvstrip_dwf_")
+        try:
             tdir_p = Path(tdir)
             model_file = tdir_p / "model.txt"
             text = Path(model_path).read_text(encoding="utf-8", errors="ignore")
             model_file.write_text(text, encoding="utf-8")
 
-            # Copy exe into temp dir to avoid long-path / permission issues
-            local_exe = tdir_p / exe_path.name
-            try:
-                shutil.copy2(str(exe_path), str(local_exe))
-            except (PermissionError, OSError):
-                local_exe = exe_path  # fall back to original path
-
             cmd = [
-                str(local_exe),
+                str(exe_path),
                 "-hv",
                 "-f", str(model_file),
                 "-fmin", str(cfg["fmin"]),
@@ -213,12 +208,12 @@ class DiffuseFieldEngine(BaseForwardEngine):
                     f"HVf.exe failed (exit code {e.returncode}):\n"
                     f"  stderr: {e.stderr}\n"
                     f"  stdout: {e.stdout}\n"
-                    f"  exe: {local_exe}\n"
+                    f"  exe: {exe_path}\n"
                     f"  Tip: check antivirus or run as administrator."
                 ) from e
             except PermissionError as e:
                 raise RuntimeError(
-                    f"Permission denied running HVf.exe at {local_exe}.\n"
+                    f"Permission denied running HVf.exe at {exe_path}.\n"
                     f"  Try: (1) whitelist in antivirus, (2) run as admin, "
                     f"(3) copy exe manually to a writable folder."
                 ) from e
@@ -234,6 +229,12 @@ class DiffuseFieldEngine(BaseForwardEngine):
                 raise RuntimeError(
                     "No HV output generated (HV.dat missing and empty stdout)"
                 )
+        finally:
+            # Clean up temp dir — tolerate failures (Windows file locking)
+            try:
+                shutil.rmtree(tdir, ignore_errors=True)
+            except Exception:
+                pass
 
         freqs, amps = _parse_hv_text(hv_text)
         elapsed = time.perf_counter() - t0

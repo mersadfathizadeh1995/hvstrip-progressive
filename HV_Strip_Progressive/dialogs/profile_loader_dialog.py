@@ -122,11 +122,11 @@ class ProfileLoaderDialog(QDialog):
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Model File", "",
-            "Model Files (*.txt *.csv);;All (*)")
+            "All Supported (*.txt *.csv *.xlsx);;Text (*.txt);;CSV (*.csv);;Excel (*.xlsx);;All (*)")
         if path:
             self._file_edit.setText(path)
             try:
-                from core.soil_profile import SoilProfile
+                from ..core.soil_profile import SoilProfile
                 prof = SoilProfile.from_auto(path)
                 self._file_preview.set_profile(prof)
                 n = len([L for L in prof.layers if not L.is_halfspace])
@@ -154,7 +154,7 @@ class ProfileLoaderDialog(QDialog):
         if not vs:
             return
         try:
-            from core.soil_profile import SoilProfile
+            from ..core.soil_profile import SoilProfile
             prof = SoilProfile.from_dinver_files(
                 vs, self._din_vp.text().strip() or None,
                 self._din_rho.text().strip() or None)
@@ -169,15 +169,17 @@ class ProfileLoaderDialog(QDialog):
     # ── Multi tab ───────────────────────────────────────────────
     def _multi_add(self):
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Add Profiles", "", "Model (*.txt);;All (*)")
+            self, "Add Profiles", "",
+            "All Supported (*.txt *.csv *.xlsx);;Text (*.txt);;CSV (*.csv);;Excel (*.xlsx);;All (*)")
         for p in paths:
             self._multi_list.addItem(p)
 
     def _multi_add_dir(self):
         d = QFileDialog.getExistingDirectory(self, "Add Directory")
         if d:
-            for f in sorted(Path(d).glob("*.txt")):
-                self._multi_list.addItem(str(f))
+            for ext in ("*.txt", "*.csv", "*.xlsx"):
+                for f in sorted(Path(d).glob(ext)):
+                    self._multi_list.addItem(str(f))
 
     # ── Accept ──────────────────────────────────────────────────
     def _on_accept(self):

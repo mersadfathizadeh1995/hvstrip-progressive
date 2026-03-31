@@ -371,7 +371,14 @@ class SoilProfile:
         """
         Load profile from CSV file.
 
-        Expected columns: thickness, vs, vp (optional), nu (optional), density
+        Auto-detects two CSV layouts:
+
+        1. **Layer-table format** — columns containing ``thickness`` and ``vs``
+           (case-insensitive, partial match, e.g. ``Thickness (m)``,
+           ``Median Vs (m/s)``).
+        2. **Depth-step format** — columns containing ``depth`` and ``vs``
+           (e.g. ``Depth(m)``, ``Vs(m/s)``).  Consecutive pairs of the same
+           velocity at different depths define layers.
 
         Parameters
         ----------
@@ -385,36 +392,127 @@ class SoilProfile:
         """
         path = Path(file_path)
         profile = cls(name=path.stem)
-        
+
         with open(path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
-            
-            for row in reader:
-                thickness = float(row.get("thickness", 0))
-                vs = float(row["vs"])
-                
-                vp_str = row.get("vp", "").strip()
+            headers = reader.fieldnames or []
+            lower_headers = {h: h.lower().replace(" ", "") for h in headers}
+
+            def _find_col(*keywords):
+                """Find column whose lower/stripped name contains a keyword."""
+                for kw in keywords:
+                    for orig, lh in lower_headers.items():
+                        if kw in lh:
+                            return orig
+                return None
+
+            col_thickness = _find_col("thickness")
+            col_vs = _find_col("medianvs", "vs(", "vs")
+            col_depth = _find_col("depth(", "depth")
+            col_vp = _find_col("vp(", "vp")
+            col_nu = _find_col("nu", "poisson")
+            col_density = _find_col("density", "rho")
+            col_halfspace = _find_col("halfspace")
+
+            # ── Depth-step CSV (Depth, Vs pairs) ───────────────
+            if col_depth and col_vs and not col_thickness:
+                return cls._from_csv_depth_step(reader, col_depth, col_vs, path.stem)
+
+            # ── Layer-table CSV ─────────────────────────────────
+            if col_vs is None:
+                raise ValueError(
+                    f"CSV has no recognisable Vs column.  Headers: {headers}"
+                )
+
+            rows = list(reader)
+            for row in rows:
+                th_str = row.get(col_thickness, "0").strip() if col_thickness else "0"
+                thickness = float(th_str) if th_str else 0.0
+                vs = float(row[col_vs])
+
+                vp_str = row.get(col_vp, "").strip() if col_vp else ""
                 vp = float(vp_str) if vp_str else None
-                
-                nu_str = row.get("nu", "").strip()
+
+                nu_str = row.get(col_nu, "").strip() if col_nu else ""
                 nu = float(nu_str) if nu_str else None
-                
-                density_str = row.get("density", "").strip()
-                density = float(density_str) if density_str else VelocityConverter.suggest_density(vs)
-                
-                is_halfspace_str = row.get("is_halfspace", "").strip().lower()
-                is_halfspace = is_halfspace_str in ("1", "true", "yes") or thickness == 0
-                
+
+                den_str = row.get(col_density, "").strip() if col_density else ""
+                density = float(den_str) if den_str else VelocityConverter.suggest_density(vs)
+
+                hs_str = row.get(col_halfspace, "").strip().lower() if col_halfspace else ""
+                is_halfspace = hs_str in ("1", "true", "yes") or thickness == 0
+
                 layer = Layer(
                     thickness=thickness,
                     vs=vs,
                     vp=vp,
                     nu=nu,
                     density=density,
-                    is_halfspace=is_halfspace
+                    is_halfspace=is_halfspace,
                 )
                 profile.add_layer(layer)
-        
+
+            # If no layer is marked half-space, mark the last one
+            if profile.layers and not any(L.is_halfspace for L in profile.layers):
+                profile.layers[-1].is_halfspace = True
+                profile.layers[-1].thickness = 0
+
+        return profile
+
+    @classmethod
+    def _from_csv_depth_step(
+        cls, reader, col_depth: str, col_vs: str, name: str
+    ) -> "SoilProfile":
+        """Parse a Depth-Vs step-function CSV into a SoilProfile.
+
+        Each pair of rows with the same Vs value at two depths defines
+        a constant-velocity layer.  The last unique velocity becomes
+        the half-space.
+        """
+        pairs = []
+        for row in reader:
+            d_str = row.get(col_depth, "").strip()
+            v_str = row.get(col_vs, "").strip()
+            if not d_str or not v_str:
+                continue
+            d = float(d_str)
+            v = float(v_str)
+            pairs.append((d, v))
+
+        if len(pairs) < 2:
+            raise ValueError("Depth-step CSV needs at least 2 rows")
+
+        # Extract constant-velocity segments from the step function
+        layers_data = []  # (thickness, vs)
+        i = 0
+        while i < len(pairs) - 1:
+            d_top, vs_top = pairs[i]
+            # Find the bottom of this constant-velocity segment
+            if i + 1 < len(pairs) and abs(pairs[i + 1][1] - vs_top) < 1e-6:
+                d_bot = pairs[i + 1][0]
+                thickness = d_bot - d_top
+                layers_data.append((thickness, vs_top))
+                i += 2
+            else:
+                # Single point — use next depth as boundary
+                d_bot = pairs[i + 1][0]
+                thickness = d_bot - d_top
+                layers_data.append((thickness, vs_top))
+                i += 1
+
+        # Handle trailing single point as half-space
+        if i == len(pairs) - 1:
+            layers_data.append((0, pairs[i][1]))
+
+        profile = cls(name=name)
+        for idx, (th, vs) in enumerate(layers_data):
+            is_hs = (idx == len(layers_data) - 1)
+            profile.add_layer(Layer(
+                thickness=0 if is_hs else th,
+                vs=vs,
+                density=VelocityConverter.suggest_density(vs),
+                is_halfspace=is_hs,
+            ))
         return profile
 
     @classmethod
@@ -831,8 +929,33 @@ class SoilProfile:
             except Exception:
                 pass  # fall through to HVf / simple TXT
 
-        # .txt or unknown → try HVf, then simple TXT
+        # .txt or unknown → try HVf, then dinver step-polyline, then simple TXT
         if ext in (".txt", ""):
+            # Peek at file to detect Dinver step-polyline format
+            try:
+                content = path.read_text(encoding="utf-8", errors="ignore")
+                lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+                is_dinver_step = False
+                if lines:
+                    # Dinver step files start with "# Vs" or "# Vp" or "# rho"
+                    first_non_comment = ""
+                    for ln in lines:
+                        if ln.startswith("#"):
+                            if any(kw in ln.lower() for kw in ("vs", "vp", "rho", "density")):
+                                is_dinver_step = True
+                                break
+                            continue
+                        first_non_comment = ln
+                        break
+                    # Also detect by presence of 'inf' in values
+                    if not is_dinver_step and any("inf" in ln.lower() for ln in lines[-3:]):
+                        is_dinver_step = True
+                if is_dinver_step:
+                    profile = cls.from_dinver_files(str(path), name=name)
+                    return profile
+            except Exception:
+                pass
+
             try:
                 profile = cls.from_hvf_file(str(path))
                 profile.name = name
