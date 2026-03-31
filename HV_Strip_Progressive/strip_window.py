@@ -189,8 +189,9 @@ class HVStripWindow(QMainWindow):
 
     closed = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, project_context=None):
         super().__init__(parent)
+        self._project_context = project_context
         self.setWindowTitle("HVSR Progressive Layer Stripping Analysis")
         self.resize(1500, 950)
         self.setMinimumSize(1100, 750)
@@ -213,6 +214,50 @@ class HVStripWindow(QMainWindow):
         self._build_summary_dock()
         self._build_status_bar()
         self._apply_saved_config()
+
+        if project_context:
+            self._apply_project_context()
+
+    # ══════════════════════════════════════════════════════════════
+    #  PROJECT INTEGRATION
+    # ══════════════════════════════════════════════════════════════
+
+    def _apply_project_context(self):
+        """Apply project context — set output dir, update title."""
+        ctx = self._project_context
+        if not ctx:
+            return
+        project = ctx.get('project')
+        profile_id = ctx.get('profile_id', '')
+        if project:
+            self.setWindowTitle(
+                f"HV Strip — {project.name} — {profile_id}")
+            # Set last strip dir to project profile folder
+            profile_dir = project.ensure_module_dir('hv_strip', profile_id)
+            self._last_strip_dir = str(profile_dir)
+
+    def _save_project_state(self):
+        """Persist state into the project folder on close."""
+        ctx = self._project_context
+        if not ctx:
+            return
+        try:
+            from hvsr_pro.packages.project_manager.module_state.hvstrip_state_io import (
+                save_hvstrip_state,
+            )
+            project = ctx['project']
+            profile_id = ctx.get('profile_id', 'profile_001')
+            profile_dir = project.ensure_module_dir('hv_strip', profile_id)
+
+            save_hvstrip_state(
+                profile_dir,
+                config=self._config,
+                results=self._last_result,
+            )
+            project.log_activity('hv_strip', f'State saved for {profile_id}')
+            project.save()
+        except Exception:
+            pass  # best-effort
 
     # ══════════════════════════════════════════════════════════════
     #  MENU BAR  (no toolbar)
@@ -1236,5 +1281,6 @@ class HVStripWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._save_settings()
+        self._save_project_state()
         self.closed.emit()
         super().closeEvent(event)
