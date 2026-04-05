@@ -516,7 +516,7 @@ class HVCurveView(QWidget):
         ax.grid(True, alpha=0.2)
 
         try:
-            from ..core.vs_average import vs_average_from_profile
+            from ...core.vs_average import vs_average_from_profile
             result = vs_average_from_profile(prof, target_depth=30.0)
             ax.axhline(30.0, color="blue", lw=0.8, ls="-.", alpha=0.5)
             ax.annotate(f"Vs30={result.vs_avg:.0f}",
@@ -759,7 +759,7 @@ class HVCurveView(QWidget):
             ax.grid(True, alpha=0.3)
 
             try:
-                from ..core.vs_average import vs_average_from_profile
+                from ...core.vs_average import vs_average_from_profile
                 res30 = vs_average_from_profile(prof, target_depth=30.0)
                 ax.axhline(30.0, color="blue", lw=0.8, ls="-.", alpha=0.6)
                 vs_max = max(vs) if vs else 500

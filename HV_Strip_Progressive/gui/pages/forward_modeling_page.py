@@ -367,7 +367,7 @@ class ForwardModelingPage(QWidget):
     # ═══════════════════════════════════════════════════════════
     def _get_active_profile(self):
         """Return the profile from the current input tab and a temp model path."""
-        from ..core.soil_profile import SoilProfile
+        from ...core.soil_profile import SoilProfile
         tab_idx = self._input_tabs.currentIndex()
 
         if tab_idx == 0:  # Load Model
@@ -400,7 +400,7 @@ class ForwardModelingPage(QWidget):
         if path:
             self._file_edit.setText(path)
             try:
-                from ..core.soil_profile import SoilProfile
+                from ...core.soil_profile import SoilProfile
                 prof = SoilProfile.from_auto(path)
                 self._file_preview.set_profile(prof)
                 self._active_profile = prof
@@ -428,7 +428,7 @@ class ForwardModelingPage(QWidget):
             if data and "path" in data:
                 self._file_edit.setText(data["path"])
                 try:
-                    from ..core.soil_profile import SoilProfile
+                    from ...core.soil_profile import SoilProfile
                     prof = SoilProfile.from_auto(data["path"])
                     self._file_preview.set_profile(prof)
                     self._active_profile = prof
@@ -461,7 +461,7 @@ class ForwardModelingPage(QWidget):
             "All Supported (*.txt *.csv *.xlsx);;Text (*.txt);;CSV (*.csv);;Excel (*.xlsx);;All (*)")
         if path:
             try:
-                from ..core.soil_profile import SoilProfile
+                from ...core.soil_profile import SoilProfile
                 prof = SoilProfile.from_auto(path)
                 self._layer_table.set_profile(prof)
                 self._on_editor_profile_changed()
@@ -585,7 +585,7 @@ class ForwardModelingPage(QWidget):
         vs30_str = ""
         if self._active_profile:
             try:
-                from ..core.vs_average import compute_vs30
+                from ...core.vs_average import compute_vs30
                 vs30 = compute_vs30(self._active_profile)
                 vs30_str = f"\nVs30 = {vs30:.1f} m/s"
             except Exception:

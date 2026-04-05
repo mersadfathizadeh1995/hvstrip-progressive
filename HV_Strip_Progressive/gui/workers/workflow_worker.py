@@ -20,7 +20,7 @@ class WorkflowWorker(QThread):
 
     def run(self):
         try:
-            from ..core.batch_workflow import run_complete_workflow
+            from ...core.batch_workflow import run_complete_workflow
 
             self.progress.emit("Starting stripping workflow...")
             result = run_complete_workflow(

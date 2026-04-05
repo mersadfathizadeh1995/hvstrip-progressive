@@ -270,7 +270,7 @@ class FigureStudioWindow(QMainWindow):
 
     def _init_reporter(self):
         try:
-            from ..core.report_generator import ProgressiveStrippingReporter
+            from ...core.report_generator import ProgressiveStrippingReporter
             self._reporter = ProgressiveStrippingReporter(
                 self._strip_dir, output_dir=self._output_dir)
         except Exception as e:
@@ -421,7 +421,7 @@ class FigureStudioWindow(QMainWindow):
             dispatch[key](fig, **kw)
         elif key == "dual_resonance":
             try:
-                from ..visualization.resonance_plots import (
+                from ...visualization.resonance_plots import (
                     draw_resonance_separation)
                 draw_resonance_separation(self._strip_dir, fig, **kw)
             except Exception as e:

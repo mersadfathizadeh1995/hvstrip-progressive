@@ -33,7 +33,7 @@ ENGINES = ["diffuse_field", "sh_wave", "ellipticity"]
 def _local_gpell_path() -> str:
     """Return gpell path from local_config, falling back to a generic default."""
     try:
-        from .local_config import GPELL_PATH
+        from ..local_config import GPELL_PATH
         return GPELL_PATH
     except Exception:
         return r"C:\Geopsy.org\bin\gpell.exe"
@@ -42,7 +42,7 @@ def _local_gpell_path() -> str:
 def _local_git_bash_path() -> str:
     """Return git-bash path from local_config, falling back to a generic default."""
     try:
-        from .local_config import GIT_BASH_PATH
+        from ..local_config import GIT_BASH_PATH
         return GIT_BASH_PATH
     except Exception:
         return r"C:\Program Files\Git\git-bash.exe"
@@ -644,7 +644,7 @@ class HVStripWindow(QMainWindow):
         if not strip_dir:
             return
         try:
-            from .core.report_generator import ProgressiveStrippingReporter
+            from ..core.report_generator import ProgressiveStrippingReporter
             reporter = ProgressiveStrippingReporter(
                 strip_dir, output_dir=str(Path(strip_dir).parent))
             reporter.generate_comprehensive_report()

@@ -126,7 +126,7 @@ class ProfileLoaderDialog(QDialog):
         if path:
             self._file_edit.setText(path)
             try:
-                from ..core.soil_profile import SoilProfile
+                from ...core.soil_profile import SoilProfile
                 prof = SoilProfile.from_auto(path)
                 self._file_preview.set_profile(prof)
                 n = len([L for L in prof.layers if not L.is_halfspace])
@@ -154,7 +154,7 @@ class ProfileLoaderDialog(QDialog):
         if not vs:
             return
         try:
-            from ..core.soil_profile import SoilProfile
+            from ...core.soil_profile import SoilProfile
             prof = SoilProfile.from_dinver_files(
                 vs, self._din_vp.text().strip() or None,
                 self._din_rho.text().strip() or None)

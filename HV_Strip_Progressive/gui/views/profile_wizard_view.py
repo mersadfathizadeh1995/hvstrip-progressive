@@ -377,7 +377,7 @@ class ProfileWizardView(QWidget):
         # Vs30
         if self._chk_vs30.isChecked():
             try:
-                from ..core.vs_average import vs_average_from_profile
+                from ...core.vs_average import vs_average_from_profile
                 res = vs_average_from_profile(prof, target_depth=30.0)
                 ax.axhline(30.0, color="blue", lw=0.8, ls="-.", alpha=0.6)
                 ax.annotate(f"Vs30 = {res.vs_avg:.0f} m/s",
@@ -391,7 +391,7 @@ class ProfileWizardView(QWidget):
         # VsAvg to bedrock
         if self._chk_vsavg.isChecked() and self._bedrock_combo.count() > 0:
             try:
-                from ..core.vs_average import compute_vs_average
+                from ...core.vs_average import compute_vs_average
                 bd_idx = self._bedrock_combo.currentData()
                 if bd_idx is not None:
                     finite_local = [L for L in prof.layers if not L.is_halfspace]

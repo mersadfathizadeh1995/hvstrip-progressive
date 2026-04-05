@@ -24,7 +24,7 @@ class ForwardWorker(QThread):
 
     def run(self):
         try:
-            from ..core.hv_forward import compute_hv_curve
+            from ...core.hv_forward import compute_hv_curve
             freqs, amps = compute_hv_curve(
                 self._model_path,
                 config=self._config,

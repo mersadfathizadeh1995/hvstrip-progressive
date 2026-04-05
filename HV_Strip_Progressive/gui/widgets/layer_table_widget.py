@@ -91,7 +91,7 @@ class LayerTableWidget(QWidget):
 
     def get_profile(self):
         """Return a SoilProfile built from current table data."""
-        from ..core.soil_profile import SoilProfile, Layer
+        from ...core.soil_profile import SoilProfile, Layer
         layers = []
         for r in range(self.table.rowCount()):
             thick = self._float(r, COL_THICK, 0)

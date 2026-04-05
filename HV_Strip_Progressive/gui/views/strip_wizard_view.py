@@ -736,7 +736,7 @@ class StripWizardView(QWidget):
             if hs:
                 layer_tuples.append((0, hs[0]["vs"]))
 
-            from ..core.vs_average import compute_vs_average
+            from ...core.vs_average import compute_vs_average
             # Vs30
             res30 = compute_vs_average(layer_tuples, target_depth=30.0,
                                        use_halfspace=True)
@@ -812,7 +812,7 @@ class StripWizardView(QWidget):
     def _detect_preset(self, freqs, amps, cfg):
         """Use core peak_detection.py preset for primary, find_all_peaks for secondary."""
         try:
-            from ..core.peak_detection import (
+            from ...core.peak_detection import (
                 detect_peak, find_all_peaks, get_peak_detection_preset)
         except ImportError:
             return self._detect_range_constrained(freqs, amps, cfg)
@@ -846,7 +846,7 @@ class StripWizardView(QWidget):
     def _detect_advanced(self, freqs, amps, cfg):
         """Full custom config → core engine."""
         try:
-            from ..core.peak_detection import detect_peak, find_all_peaks
+            from ...core.peak_detection import detect_peak, find_all_peaks
         except ImportError:
             return self._detect_range_constrained(freqs, amps, cfg)
 

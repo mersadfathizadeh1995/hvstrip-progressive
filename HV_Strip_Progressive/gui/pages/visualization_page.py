@@ -200,7 +200,7 @@ class VisualizationPage(QWidget):
 
         if model_path and os.path.isfile(model_path):
             try:
-                from ..core.soil_profile import SoilProfile
+                from ...core.soil_profile import SoilProfile
                 self._model_data = SoilProfile.from_auto(model_path)
                 loaded.append("Model")
             except Exception as e:
@@ -371,7 +371,7 @@ class VisualizationPage(QWidget):
             QMessageBox.warning(self, "Error", "Please load a results directory first.")
             return
         try:
-            from ..core.dual_resonance import extract_dual_resonance
+            from ...core.dual_resonance import extract_dual_resonance
             result = extract_dual_resonance(self._results_dir)
             style = self._get_style()
             pw = self._plots["Dual-Resonance"]
@@ -406,7 +406,7 @@ class VisualizationPage(QWidget):
         if not path:
             return
         try:
-            from ..core.dual_resonance import extract_dual_resonance
+            from ...core.dual_resonance import extract_dual_resonance
             result = extract_dual_resonance(self._results_dir)
             if result and "steps" in result:
                 with open(path, "w") as f:

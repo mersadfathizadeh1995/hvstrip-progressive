@@ -87,14 +87,14 @@ class SummaryDockWidget(QDockWidget):
             if r.profile:
                 # Vs30
                 try:
-                    from ..core.vs_average import vs_average_from_profile
+                    from ...core.vs_average import vs_average_from_profile
                     res30 = vs_average_from_profile(r.profile, target_depth=30.0)
                     vs30 = f"{res30.vs_avg:.0f}"
                 except Exception:
                     pass
                 # VsAvg: try deepest finite interface as bedrock
                 try:
-                    from ..core.vs_average import compute_vs_average
+                    from ...core.vs_average import compute_vs_average
                     finite = [L for L in r.profile.layers if not L.is_halfspace]
                     if finite:
                         bd = sum(L.thickness for L in finite)
@@ -107,7 +107,7 @@ class SummaryDockWidget(QDockWidget):
                 # Fallback: use vs_average_from_profile with total depth
                 if vsavg == "—":
                     try:
-                        from ..core.vs_average import vs_average_from_profile
+                        from ...core.vs_average import vs_average_from_profile
                         finite = [L for L in r.profile.layers if not L.is_halfspace]
                         total = sum(L.thickness for L in finite)
                         if total > 0:

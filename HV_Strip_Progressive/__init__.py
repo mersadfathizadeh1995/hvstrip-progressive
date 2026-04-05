@@ -4,7 +4,7 @@ Core engine modules are internalised under HV_Strip_Progressive.core/
 so no sys.path manipulation is needed.
 """
 
-from .strip_window import HVStripWindow
+from .gui.strip_window import HVStripWindow
 
 __all__ = ["HVStripWindow"]
-__version__ = "2.1.0"
+__version__ = "2.2.0"

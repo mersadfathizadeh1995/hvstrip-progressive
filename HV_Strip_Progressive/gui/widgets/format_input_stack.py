@@ -172,7 +172,7 @@ class _EditorPage(QWidget):
             "Model Files (*.txt *.csv);;All Files (*)")
         if path:
             try:
-                from ..core.soil_profile import SoilProfile
+                from ...core.soil_profile import SoilProfile
                 profile = SoilProfile.from_auto(path)
                 if self._table and hasattr(self._table, 'set_profile'):
                     self._table.set_profile(profile)
@@ -343,7 +343,7 @@ class FormatInputStack(QWidget):
         fmt = ALL_FORMATS[idx]
 
         try:
-            from ..core.soil_profile import SoilProfile
+            from ...core.soil_profile import SoilProfile
         except ImportError:
             try:
                 import importlib
