@@ -182,6 +182,7 @@ MODE_FWD_SINGLE = "forward_single"
 MODE_FWD_MULTI = "forward_multi"
 MODE_STRIP_SINGLE = "strip_single"
 MODE_STRIP_BATCH = "strip_batch"
+MODE_RESEARCH = "research"
 
 
 class HVStripWindow(QMainWindow):
@@ -345,6 +346,12 @@ class HVStripWindow(QMainWindow):
         self._act_strip_results.toggled.connect(self._toggle_strip_results_dock)
         view_menu.addAction(self._act_strip_results)
 
+        self._act_research_results = QAction(
+            "Show Research Results", self, checkable=True, checked=True)
+        self._act_research_results.setShortcut("Ctrl+Shift+C")
+        self._act_research_results.toggled.connect(self._toggle_research_dock)
+        view_menu.addAction(self._act_research_results)
+
         view_menu.addAction("Reset Layout", self._reset_layout)
 
         # ── Tools ───────────────────────────────────────────────
@@ -422,6 +429,11 @@ class HVStripWindow(QMainWindow):
 
         self._main_tabs.addTab(self._strip_tabs, "HV Strip")
 
+        # ── Research tab (single panel, no sub-tabs) ───────────
+        self._research_panel = self._create_panel(MODE_RESEARCH,
+                                                    "Research")
+        self._main_tabs.addTab(self._research_panel, "Research")
+
         # Switch canvas when the top-level tab changes
         self._main_tabs.currentChanged.connect(self._on_main_tab_changed)
 
@@ -433,7 +445,8 @@ class HVStripWindow(QMainWindow):
         self._canvas_stack = QStackedWidget()
 
         for mode in [MODE_FWD_SINGLE, MODE_FWD_MULTI,
-                     MODE_STRIP_SINGLE, MODE_STRIP_BATCH]:
+                     MODE_STRIP_SINGLE, MODE_STRIP_BATCH,
+                     MODE_RESEARCH]:
             canvas = self._create_canvas(mode)
             self._canvas_stacks[mode] = canvas
             self._canvas_stack.addWidget(canvas)
@@ -663,6 +676,7 @@ class HVStripWindow(QMainWindow):
             MODE_FWD_MULTI: (".panels.forward_multi_panel", "ForwardMultiPanel"),
             MODE_STRIP_SINGLE: (".panels.strip_single_panel", "StripSinglePanel"),
             MODE_STRIP_BATCH: (".panels.strip_batch_panel", "StripBatchPanel"),
+            MODE_RESEARCH: (".panels.research_panel", "ResearchPanel"),
         }
         mod_path, cls_name = panel_map.get(mode, (None, None))
         if mod_path:
@@ -717,6 +731,13 @@ class HVStripWindow(QMainWindow):
                 ("figure_studio", f"{EMOJI['figures']} Figure Studio"),
                 ("summary", f"{EMOJI['chart']} Summary"),
             ],
+            MODE_RESEARCH: [
+                ("research_config", f"{EMOJI['settings']} Configuration"),
+                ("research_profiles", f"{EMOJI['profile']} Profiles"),
+                ("research_comparison", f"{EMOJI['forward']} Comparison"),
+                ("research_figures", f"{EMOJI['figures']} Figures"),
+                ("research_report", f"{EMOJI['report']} Report"),
+            ],
         }
 
         for tab_id, tab_label in tab_defs.get(mode, []):
@@ -761,6 +782,12 @@ class HVStripWindow(QMainWindow):
             "all_profiles": (".views.all_profiles_view", "AllProfilesView"),
             "strip_wizard": (".views.strip_wizard_view", "StripWizardView"),
             "figure_studio_view": (".views.figure_studio_view", "FigureStudioView"),
+            # Research views
+            "research_config": (".views.research_config_view", "ResearchConfigView"),
+            "research_profiles": (".views.research_profiles_view", "ResearchProfilesView"),
+            "research_comparison": (".views.research_comparison_view", "ResearchComparisonView"),
+            "research_figures": (".views.research_figures_view", "ResearchFiguresView"),
+            "research_report": (".views.research_report_view", "ResearchReportView"),
         }
         # Some tab_ids re-use existing views
         if tab_id in ("current_profile",):
@@ -849,6 +876,24 @@ class HVStripWindow(QMainWindow):
         self._strip_summary_dock.visibilityChanged.connect(
             self._on_strip_results_dock_vis)
 
+        # Research results dock
+        try:
+            from .widgets.research_results_dock import ResearchResultsDock
+            self._research_dock = ResearchResultsDock(self)
+        except Exception as e:
+            print(f"[HVStrip] ResearchResultsDock error: {e}")
+            self._research_dock = QDockWidget("Research Results", self)
+            self._research_dock.setWidget(
+                self._placeholder("Research Results"))
+
+        self._research_dock.setAllowedAreas(Qt.RightDockWidgetArea)
+        self.addDockWidget(Qt.RightDockWidgetArea, self._research_dock)
+        self.tabifyDockWidget(self._strip_summary_dock, self._research_dock)
+        self._research_dock.setVisible(False)  # hidden until Research mode
+
+        self._research_dock.visibilityChanged.connect(
+            self._on_research_dock_vis)
+
     def _on_strip_results_dock_vis(self, visible):
         if hasattr(self, '_act_strip_results'):
             self._act_strip_results.blockSignals(True)
@@ -868,17 +913,31 @@ class HVStripWindow(QMainWindow):
     def _toggle_summary_dock(self, show):
         self._summary_dock.setVisible(show)
 
+    def _on_research_dock_vis(self, visible):
+        if hasattr(self, '_act_research_results'):
+            self._act_research_results.blockSignals(True)
+            self._act_research_results.setChecked(visible)
+            self._act_research_results.blockSignals(False)
+
+    def _toggle_research_dock(self, show):
+        if hasattr(self, '_research_dock'):
+            self._research_dock.setVisible(show)
+
     def _toggle_right_docks(self):
         """Toggle all right docks visible/hidden."""
         log_vis = self._log_dock.isVisible()
         sum_vis = self._summary_dock.isVisible()
         strip_vis = getattr(self, '_strip_summary_dock', None) and \
             self._strip_summary_dock.isVisible()
-        if log_vis or sum_vis or strip_vis:
+        research_vis = getattr(self, '_research_dock', None) and \
+            self._research_dock.isVisible()
+        if log_vis or sum_vis or strip_vis or research_vis:
             self._log_dock.setVisible(False)
             self._summary_dock.setVisible(False)
             if hasattr(self, '_strip_summary_dock'):
                 self._strip_summary_dock.setVisible(False)
+            if hasattr(self, '_research_dock'):
+                self._research_dock.setVisible(False)
             self._btn_toggle_dock.setText("◀")
             self._btn_toggle_dock.setToolTip("Expand right panels")
         else:
@@ -922,15 +981,17 @@ class HVStripWindow(QMainWindow):
     #  MODE SWITCHING
     # ══════════════════════════════════════════════════════════════
     def _on_main_tab_changed(self, idx):
-        """Handle top-level tab change (Forward Model ↔ HV Strip)."""
+        """Handle top-level tab change (Forward Model ↔ HV Strip ↔ Research)."""
         if not hasattr(self, '_canvas_stack'):
             return
         if idx == 0:  # Forward Model
             sub_idx = self._fwd_tabs.currentIndex()
             mode = MODE_FWD_SINGLE if sub_idx == 0 else MODE_FWD_MULTI
-        else:  # HV Strip
+        elif idx == 1:  # HV Strip
             sub_idx = self._strip_tabs.currentIndex()
             mode = MODE_STRIP_SINGLE if sub_idx == 0 else MODE_STRIP_BATCH
+        else:  # Research
+            mode = MODE_RESEARCH
         self._switch_mode(mode)
 
     def _on_subtab_changed(self, section, idx):
@@ -948,7 +1009,8 @@ class HVStripWindow(QMainWindow):
         self._active_mode = mode
         # Find the stacked index for this mode
         modes = [MODE_FWD_SINGLE, MODE_FWD_MULTI,
-                 MODE_STRIP_SINGLE, MODE_STRIP_BATCH]
+                 MODE_STRIP_SINGLE, MODE_STRIP_BATCH,
+                 MODE_RESEARCH]
         if mode in modes:
             self._canvas_stack.setCurrentIndex(modes.index(mode))
 
@@ -966,12 +1028,21 @@ class HVStripWindow(QMainWindow):
             elif hasattr(self, '_act_summary') and self._act_summary.isChecked():
                 self._summary_dock.setVisible(True)
 
+        # Show/hide research results dock
+        if hasattr(self, '_research_dock'):
+            is_research = (mode == MODE_RESEARCH)
+            self._research_dock.setVisible(
+                is_research and self._act_research_results.isChecked())
+            if is_research:
+                self._research_dock.raise_()
+
         # Update status bar
         labels = {
             MODE_FWD_SINGLE: "Forward Single",
             MODE_FWD_MULTI: "Forward Multiple",
             MODE_STRIP_SINGLE: "Strip Single",
             MODE_STRIP_BATCH: "Strip Batch",
+            MODE_RESEARCH: "Research",
         }
         if hasattr(self, '_status_mode'):
             self._status_mode.setText(f"Mode: {labels.get(mode, mode)}")
@@ -1122,6 +1193,12 @@ class HVStripWindow(QMainWindow):
         if hasattr(self, '_act_strip_results'):
             self._act_strip_results.setChecked(
                 self._active_mode == MODE_STRIP_SINGLE)
+        if hasattr(self, '_research_dock'):
+            self._research_dock.setVisible(
+                self._active_mode == MODE_RESEARCH)
+        if hasattr(self, '_act_research_results'):
+            self._act_research_results.setChecked(
+                self._active_mode == MODE_RESEARCH)
 
     # ══════════════════════════════════════════════════════════════
     #  PUBLIC API  (used by panels, views, dialogs)
@@ -1276,6 +1353,36 @@ class HVStripWindow(QMainWindow):
                 if hasattr(w, 'set_results') and w is not wiz:
                     w.set_results(result_dict)
                     break
+
+    def get_research_dock(self):
+        """Return the research results dock widget."""
+        return getattr(self, '_research_dock', None)
+
+    def update_research_results(self, phase_name, result_dict):
+        """Push research study results to the dock and canvas views.
+
+        Called by ResearchPanel/ResearchWorker after each pipeline phase.
+        """
+        # Update research dock
+        dock = self.get_research_dock()
+        if dock and hasattr(dock, 'update_phase'):
+            dock.update_phase(phase_name, result_dict)
+            if self._active_mode == MODE_RESEARCH:
+                dock.setVisible(True)
+                dock.raise_()
+
+        # Propagate to canvas views that accept results
+        canvas = self._canvas_stacks.get(MODE_RESEARCH)
+        if canvas:
+            for i in range(canvas.count()):
+                w = canvas.widget(i)
+                method = f"on_{phase_name}_complete"
+                if hasattr(w, method):
+                    getattr(w, method)(result_dict)
+                elif hasattr(w, 'set_results'):
+                    w.set_results(result_dict)
+
+        self.log(f"Research {phase_name}: done")
 
     # ══════════════════════════════════════════════════════════════
     #  SETTINGS PERSISTENCE

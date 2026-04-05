@@ -77,4 +77,11 @@ EMOJI = {
     "dual": "🔀",
     "report": "📄",
     "interactive": "👆",
+    "research": "🔬",
+    "study": "📝",
+    "metrics": "📏",
+    "generate": "🔄",
+    "validate": "✔",
+    "field": "🌍",
+    "latex": "📜",
 }
