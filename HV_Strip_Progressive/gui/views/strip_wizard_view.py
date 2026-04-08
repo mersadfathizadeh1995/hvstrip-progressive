@@ -462,6 +462,13 @@ class StripWizardView(QWidget):
             depths.append(z); vs_vals.append(L["vs"])
         total = z
 
+        if not depths or total <= 0:
+            ax.text(0.5, 0.5, "No finite layers", ha="center", va="center",
+                    transform=ax.transAxes, fontsize=9, color="gray")
+            fig.tight_layout()
+            self._vs_plot.refresh()
+            return
+
         if hs:
             hd = total * 0.25
             depths.append(z); vs_vals.append(hs[0]["vs"])
@@ -997,7 +1004,10 @@ class StripWizardView(QWidget):
     def _toggle_vs_panel(self, show):
         self._vs_panel.setVisible(show)
         if show:
-            self._redraw_vs()
+            try:
+                self._redraw_vs()
+            except Exception:
+                pass  # degenerate axes (empty profile or zero-range data)
 
     def _load_model_layers(self, model_file):
         """Load layer data from an HVf model file into a list of dicts."""

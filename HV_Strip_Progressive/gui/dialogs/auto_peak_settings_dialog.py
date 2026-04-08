@@ -391,40 +391,45 @@ class AutoPeakSettingsDialog(QDialog):
         self._strategy_combo.setCurrentIndex(strat_idx)
 
         # Range-constrained page
-        self._rc_min_amp.setValue(cfg.get("min_amplitude", 2.0))
-        rc_n = cfg.get("n_secondary", 2)
+        self._rc_min_amp.setValue(cfg.get("min_amplitude", 2.0) or 2.0)
+        rc_n = cfg.get("n_secondary", 2) or 2
         self._rc_ranges.n_secondary = rc_n
-        self._rc_ranges.set_ranges(cfg.get("ranges", []))
+        self._rc_ranges.set_ranges(cfg.get("ranges", []) or [])
 
         # Preset page
-        preset = cfg.get("preset", "default")
+        preset = cfg.get("preset", "default") or "default"
         idx = self._preset_combo.findText(preset)
         if idx >= 0:
             self._preset_combo.setCurrentIndex(idx)
-        self._pr_min_amp.setValue(cfg.get("min_amplitude", 1.5))
+        self._pr_min_amp.setValue(cfg.get("min_amplitude", 1.5) or 1.5)
         pr_n = cfg.get("n_secondary", 2)
         self._pr_ranges.n_secondary = pr_n
         self._pr_ranges.set_ranges(cfg.get("ranges", []))
 
         # Advanced page
-        method = cfg.get("method", "find_peaks")
+        def _v(key, default):
+            """None-safe config getter — returns default if value is None."""
+            val = cfg.get(key, default)
+            return default if val is None else val
+
+        method = _v("method", "find_peaks")
         idx_m = self._adv_method.findText(method)
         if idx_m >= 0:
             self._adv_method.setCurrentIndex(idx_m)
-        select = cfg.get("select", "leftmost")
+        select = _v("select", "leftmost")
         idx_s = self._adv_select.findText(select)
         if idx_s >= 0:
             self._adv_select.setCurrentIndex(idx_s)
-        self._adv_prominence.setValue(cfg.get("prominence", 0.2))
-        self._adv_distance.setValue(cfg.get("distance", 3))
-        self._adv_width.setValue(cfg.get("width", 0.0))
-        self._adv_freq_min.setValue(cfg.get("freq_min", 0.1))
-        self._adv_freq_max.setValue(cfg.get("freq_max", 0.0))
-        self._adv_min_amp.setValue(cfg.get("min_amplitude", 1.5))
-        self._adv_min_rel.setValue(cfg.get("min_rel_height", 0.15))
-        self._adv_excl_n.setValue(cfg.get("exclude_first_n", 1))
-        self._adv_clarity.setChecked(cfg.get("check_clarity", False))
-        self._adv_clarity_thr.setValue(cfg.get("clarity_threshold", 1.5))
+        self._adv_prominence.setValue(_v("prominence", 0.2))
+        self._adv_distance.setValue(_v("distance", 3))
+        self._adv_width.setValue(_v("width", 0.0))
+        self._adv_freq_min.setValue(_v("freq_min", 0.1))
+        self._adv_freq_max.setValue(_v("freq_max", 0.0))
+        self._adv_min_amp.setValue(_v("min_amplitude", 1.5))
+        self._adv_min_rel.setValue(_v("min_rel_height", 0.15))
+        self._adv_excl_n.setValue(_v("exclude_first_n", 1))
+        self._adv_clarity.setChecked(_v("check_clarity", False))
+        self._adv_clarity_thr.setValue(_v("clarity_threshold", 1.5))
         adv_n = cfg.get("n_secondary", 2)
         self._adv_ranges.n_secondary = adv_n
         self._adv_ranges.set_ranges(cfg.get("ranges", []))
