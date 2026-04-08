@@ -387,6 +387,10 @@ class DualResonanceConfig:
     """Minimum f1/f0 ratio to accept separation."""
     separation_shift_threshold: float = 0.3
     """Minimum absolute frequency shift [Hz] between steps."""
+    step_pair: Optional[tuple] = None
+    """Which step indices to compare as (deep, shallow). None → (0, 1)."""
+    user_peaks: Optional[Dict[str, tuple]] = None
+    """Step name → (freq_Hz, amplitude) overrides from the wizard."""
 
 
 @dataclass

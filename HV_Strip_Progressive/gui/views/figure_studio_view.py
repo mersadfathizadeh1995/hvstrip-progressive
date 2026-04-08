@@ -54,6 +54,8 @@ class FigureStudioView(QWidget):
         self._has_dr = False
         self._current_key = None
         self._active_keys = []
+        self._wizard_peak_data = {}   # step_name → (freq, amp)
+        self._step_names = []          # ordered step folder names
         self._build_ui()
 
     # ══════════════════════════════════════════════════════════════
@@ -232,11 +234,26 @@ class FigureStudioView(QWidget):
             Path(strip_dir).parent)
         self._has_dr = has_dual_resonance
         self._init_reporter()
+        self._discover_steps()
         self._populate_figure_list()
 
         # Auto-select first and draw
         if self._fig_list.count() > 0:
             self._fig_list.setCurrentRow(0)
+
+    def set_wizard_peaks(self, peak_data: dict):
+        """Store wizard-selected peaks for dual-resonance figures.
+
+        Parameters
+        ----------
+        peak_data : dict
+            Step folder name → ``(freq_Hz, amplitude)`` tuples.
+            e.g. ``{"Step0_4-layer": (1.05, 3.2), "Step1_3-layer": (2.1, 2.8)}``
+        """
+        self._wizard_peak_data = dict(peak_data) if peak_data else {}
+        # Redraw if currently viewing dual_resonance
+        if self._current_key == "dual_resonance":
+            self._draw_current()
 
     # ══════════════════════════════════════════════════════════════
     #  INTERNALS
@@ -249,6 +266,29 @@ class FigureStudioView(QWidget):
         except Exception as e:
             print(f"[FigureStudio] Reporter init: {e}")
             self._reporter = None
+
+    def _discover_steps(self):
+        """Find all Step* folders for the step-pair selector."""
+        if not self._strip_dir:
+            self._step_names = []
+            return
+        sp = Path(self._strip_dir)
+        step_dirs = sorted(sp.glob("Step*_*"), key=lambda p: p.name)
+        self._step_names = [d.name for d in step_dirs]
+
+    def _populate_step_combos(self, deep_combo, shallow_combo):
+        """Fill step-pair combo boxes with discovered step names."""
+        for combo in (deep_combo, shallow_combo):
+            combo.clear()
+        if not self._step_names:
+            return
+        for name in self._step_names:
+            deep_combo.addItem(name)
+            shallow_combo.addItem(name)
+        # Defaults: deep = first step, shallow = second step
+        deep_combo.setCurrentIndex(0)
+        if len(self._step_names) > 1:
+            shallow_combo.setCurrentIndex(1)
 
     def _populate_figure_list(self):
         self._fig_list.clear()
@@ -390,6 +430,14 @@ class FigureStudioView(QWidget):
             _add_annotation_controls(w._controls, form)
 
         elif key == "dual_resonance":
+            # Step pair selectors
+            w._controls["deep_step"] = QComboBox()
+            w._controls["shallow_step"] = QComboBox()
+            self._populate_step_combos(
+                w._controls["deep_step"], w._controls["shallow_step"])
+            form.addRow("Deep Step (f₀):", w._controls["deep_step"])
+            form.addRow("Shallow Step (f₁):", w._controls["shallow_step"])
+
             w._controls["grid"] = QCheckBox(); w._controls["grid"].setChecked(True)
             w._controls["linewidth"] = _spin_float(0.5, 6, 1.5)
             w._controls["f0_dx"] = _spin_float(-5, 5, 0, 0.1)
@@ -485,10 +533,32 @@ class FigureStudioView(QWidget):
             try:
                 from ...visualization.resonance_plots import (
                     draw_resonance_separation)
-                draw_resonance_separation(self._strip_dir, fig, **kw)
+
+                # Resolve step pair from combo boxes
+                step_pair = self._resolve_step_pair(kw)
+
+                draw_resonance_separation(
+                    self._strip_dir, fig,
+                    peak_overrides=self._wizard_peak_data or None,
+                    step_pair=step_pair,
+                    **kw,
+                )
             except Exception as e:
                 raise RuntimeError(
                     f"Dual-resonance plot failed: {e}") from e
+
+    def _resolve_step_pair(self, kw):
+        """Convert step combo selections to a ``(deep_idx, shallow_idx)`` tuple."""
+        deep_name = kw.pop("deep_step", None)
+        shallow_name = kw.pop("shallow_step", None)
+        if not deep_name or not shallow_name or not self._step_names:
+            return None
+        try:
+            deep_idx = self._step_names.index(deep_name)
+            shallow_idx = self._step_names.index(shallow_name)
+            return (deep_idx, shallow_idx)
+        except ValueError:
+            return None
 
     # ══════════════════════════════════════════════════════════════
     #  EXPORT

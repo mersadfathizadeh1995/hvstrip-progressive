@@ -29,6 +29,9 @@ def extract_dual_resonance(
     peak_config: Optional[PeakDetectionConfig] = None,
     profile_name: Optional[str] = None,
     profile_path: Optional[str] = None,
+    *,
+    user_peaks: Optional[Dict[str, tuple]] = None,
+    step_pair: Optional[tuple] = None,
 ) -> Dict[str, Any]:
     """Extract f0 (deep) and f1 (shallow) resonance frequencies.
 
@@ -40,6 +43,12 @@ def extract_dual_resonance(
     peak_config : PeakDetectionConfig, optional
     profile_name, profile_path : str, optional
         Metadata passed through to the result.
+    user_peaks : dict, optional
+        Step name → ``(freq_Hz, amplitude)`` overrides from the wizard.
+        Takes precedence over ``config.user_peaks``.
+    step_pair : tuple, optional
+        ``(deep_idx, shallow_idx)``.  Takes precedence over
+        ``config.step_pair``.
 
     Returns
     -------
@@ -52,11 +61,17 @@ def extract_dual_resonance(
 
     peak_cfg = peak_config.to_core_config() if peak_config else None
 
+    # Resolve user_peaks and step_pair — explicit args override config
+    effective_peaks = user_peaks if user_peaks is not None else config.user_peaks
+    effective_pair = step_pair if step_pair is not None else config.step_pair
+
     result: CoreDualResult = core_extract(
         strip_dir=strip_dir,
         peak_config=peak_cfg,
         profile_name=profile_name or "",
         profile_path=profile_path or "",
+        user_peaks=effective_peaks,
+        step_pair=effective_pair,
     )
 
     return _dual_result_to_dict(result)
@@ -198,4 +213,6 @@ def _dual_result_to_dict(result: CoreDualResult) -> Dict[str, Any]:
         "error_message": result.error_message,
         "freq_per_step": list(result.freq_per_step),
         "amp_per_step": list(result.amp_per_step),
+        "step_names": list(result.step_names),
+        "step_pair": list(result.step_pair),
     }

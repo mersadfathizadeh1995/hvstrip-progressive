@@ -423,7 +423,12 @@ class FigureStudioWindow(QMainWindow):
             try:
                 from ...visualization.resonance_plots import (
                     draw_resonance_separation)
-                draw_resonance_separation(self._strip_dir, fig, **kw)
+                peak_data = getattr(self, "_wizard_peak_data", None)
+                draw_resonance_separation(
+                    self._strip_dir, fig,
+                    peak_overrides=peak_data or None,
+                    **kw,
+                )
             except Exception as e:
                 raise RuntimeError(f"Dual-resonance plot failed: {e}") from e
 

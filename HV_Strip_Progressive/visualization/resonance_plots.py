@@ -28,6 +28,9 @@ from ..core.soil_profile import compute_halfspace_display_depth
 def draw_resonance_separation(
     strip_dir: str,
     fig: "matplotlib.figure.Figure",
+    *,
+    peak_overrides: Optional[Dict[str, tuple]] = None,
+    step_pair: Optional[tuple] = None,
     **kw,
 ) -> bool:
     """Draw dual-resonance panels into an existing matplotlib *fig*.
@@ -41,9 +44,17 @@ def draw_resonance_separation(
         Path to the ``strip/`` directory with Step folders.
     fig : matplotlib.figure.Figure
         Target figure (cleared before drawing).
+    peak_overrides : dict, optional
+        Mapping of step folder name → ``(freq_Hz, amplitude)`` from the
+        wizard.  When provided, these peaks are used instead of internal
+        auto-detection.  Keys are step names like ``"Step0_4-layer"``.
+    step_pair : tuple of int, optional
+        ``(deep_idx, shallow_idx)`` selecting which steps to compare.
+        Defaults to ``(0, 1)`` (original model vs. first stripped).
     **kw
         Optional overrides: ``f0_offset``, ``f1_offset`` (Δx, Δy tuples),
-        ``show_stripped``, ``linewidth``, ``grid``, ``hs_ratio``, ``font_size``.
+        ``show_stripped``, ``linewidth``, ``grid``, ``hs_ratio``,
+        ``font_size``.
 
     Returns
     -------
@@ -51,7 +62,11 @@ def draw_resonance_separation(
         ``True`` if the figure was drawn successfully.
     """
     strip_path = Path(strip_dir)
-    data = _load_separation_data(strip_path)
+    data = _load_separation_data(
+        strip_path,
+        peak_overrides=peak_overrides,
+        step_pair=step_pair,
+    )
     if data is None:
         return False
 
@@ -76,6 +91,9 @@ def plot_resonance_separation(
     output_path: str,
     dpi: int = 300,
     figsize: tuple = (15, 9),
+    *,
+    peak_overrides: Optional[Dict[str, tuple]] = None,
+    step_pair: Optional[tuple] = None,
 ) -> Optional[str]:
     """Generate a two-panel figure showing resonance mode separation.
 
@@ -92,6 +110,10 @@ def plot_resonance_separation(
         Figure resolution.
     figsize : tuple
         Figure size in inches (width, height).
+    peak_overrides : dict, optional
+        Step name → ``(freq_Hz, amplitude)`` overrides from the wizard.
+    step_pair : tuple of int, optional
+        ``(deep_idx, shallow_idx)`` selecting which steps to compare.
 
     Returns
     -------
@@ -99,7 +121,11 @@ def plot_resonance_separation(
         Path to saved figure, or ``None`` if data was insufficient.
     """
     fig = plt.figure(figsize=figsize)
-    ok = draw_resonance_separation(strip_dir, fig)
+    ok = draw_resonance_separation(
+        strip_dir, fig,
+        peak_overrides=peak_overrides,
+        step_pair=step_pair,
+    )
     if not ok:
         plt.close(fig)
         return None
@@ -184,37 +210,70 @@ def plot_theoretical_validation(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _load_separation_data(strip_path: Path) -> Optional[Dict]:
-    """Load all data needed for a resonance-separation figure."""
-    step0_dirs = list(strip_path.glob("Step0_*"))
-    if not step0_dirs:
-        return None
-    step0 = step0_dirs[0]
-    hv0 = step0 / "hv_curve.csv"
-    if not hv0.exists():
-        return None
-    freqs0, amps0 = _load_hv_csv(hv0)
+def _load_separation_data(
+    strip_path: Path,
+    *,
+    peak_overrides: Optional[Dict[str, tuple]] = None,
+    step_pair: Optional[tuple] = None,
+) -> Optional[Dict]:
+    """Load all data needed for a resonance-separation figure.
 
-    step1_dirs = list(strip_path.glob("Step1_*"))
-    if step1_dirs:
-        step1 = step1_dirs[0]
-    else:
-        others = sorted(strip_path.glob("Step*_*-layer"))
-        if len(others) < 2:
-            return None
-        step1 = others[1]
+    Parameters
+    ----------
+    strip_path : Path
+        Strip directory containing ``Step*_*`` folders.
+    peak_overrides : dict, optional
+        Step folder name → ``(freq, amp)`` from the wizard.  When
+        provided, the corresponding auto-detection is skipped.
+    step_pair : tuple of (int, int), optional
+        Which two step indices to compare as ``(deep, shallow)``.
+        Defaults to ``(0, 1)`` — the original model vs the first
+        stripped model.
 
-    hv1 = step1 / "hv_curve.csv"
-    if not hv1.exists():
+    Returns
+    -------
+    dict or None
+        ``{"hv": (...), "layers": [...], "n_kept": int}`` or *None* if
+        the required data files are missing.
+    """
+    # Discover all step folders sorted numerically
+    step_dirs = sorted(strip_path.glob("Step*_*"), key=lambda p: p.name)
+    if len(step_dirs) < 2:
         return None
-    freqs1, amps1 = _load_hv_csv(hv1)
 
-    model_files = list(step0.glob("model_*.txt"))
+    deep_idx, shallow_idx = step_pair if step_pair else (0, 1)
+
+    # Validate indices
+    if deep_idx >= len(step_dirs) or shallow_idx >= len(step_dirs):
+        return None
+
+    step_deep = step_dirs[deep_idx]
+    step_shallow = step_dirs[shallow_idx]
+
+    # Load HV curves
+    hv_deep = step_deep / "hv_curve.csv"
+    hv_shallow = step_shallow / "hv_curve.csv"
+    if not hv_deep.exists() or not hv_shallow.exists():
+        return None
+    freqs0, amps0 = _load_hv_csv(hv_deep)
+    freqs1, amps1 = _load_hv_csv(hv_shallow)
+
+    # Load soil model from the deep step for Vs panel
+    model_files = list(step_deep.glob("model_*.txt"))
     layers = _read_model_layers(model_files[0]) if model_files else []
 
-    f0, a0 = _detect_first_peak(freqs0, amps0)
-    f1, a1 = _detect_primary_peak(freqs1, amps1)
-    n_kept = _parse_kept_layers(step1.name)
+    # Resolve peaks — prefer wizard overrides, fall back to auto-detect
+    if peak_overrides and step_deep.name in peak_overrides:
+        f0, a0 = peak_overrides[step_deep.name]
+    else:
+        f0, a0 = _detect_first_peak(freqs0, amps0)
+
+    if peak_overrides and step_shallow.name in peak_overrides:
+        f1, a1 = peak_overrides[step_shallow.name]
+    else:
+        f1, a1 = _detect_primary_peak(freqs1, amps1)
+
+    n_kept = _parse_kept_layers(step_shallow.name)
 
     return {
         "hv": (freqs0, amps0, freqs1, amps1, f0, a0, f1, a1),

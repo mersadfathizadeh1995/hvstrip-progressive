@@ -529,7 +529,16 @@ class HVStripWindow(QMainWindow):
         fs = self.get_figure_studio()
         if fs and hasattr(fs, '_init_reporter'):
             fs._init_reporter()
-            if hasattr(fs, '_draw_current'):
+            # Push wizard peaks for dual-resonance figure
+            if hasattr(fs, 'set_wizard_peaks'):
+                # Build peak_overrides: step_name → (freq, amp)
+                overrides = {}
+                for step_name, pdata in peak_data.items():
+                    f0 = pdata.get("f0")
+                    if f0 and len(f0) >= 2:
+                        overrides[step_name] = (f0[0], f0[1])
+                fs.set_wizard_peaks(overrides)
+            elif hasattr(fs, '_draw_current'):
                 fs._draw_current()
 
         # Regenerate report if panel checkbox is checked
