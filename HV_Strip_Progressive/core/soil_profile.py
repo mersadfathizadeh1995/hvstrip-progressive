@@ -406,12 +406,12 @@ class SoilProfile:
                             return orig
                 return None
 
-            col_thickness = _find_col("thickness")
+            col_thickness = _find_col("thickness", "h(")
             col_vs = _find_col("medianvs", "vs(", "vs")
-            col_depth = _find_col("depth(", "depth")
+            col_depth = _find_col("depth(", "depth", "z(")
             col_vp = _find_col("vp(", "vp")
             col_nu = _find_col("nu", "poisson")
-            col_density = _find_col("density", "rho")
+            col_density = _find_col("density", "rho(", "rho")
             col_halfspace = _find_col("halfspace")
 
             # ── Depth-step CSV (Depth, Vs pairs) ───────────────
@@ -425,7 +425,8 @@ class SoilProfile:
                 )
 
             rows = list(reader)
-            for row in rows:
+            n_rows = len(rows)
+            for row_idx, row in enumerate(rows):
                 th_str = row.get(col_thickness, "0").strip() if col_thickness else "0"
                 thickness = float(th_str) if th_str else 0.0
                 vs = float(row[col_vs])
@@ -440,7 +441,8 @@ class SoilProfile:
                 density = float(den_str) if den_str else VelocityConverter.suggest_density(vs)
 
                 hs_str = row.get(col_halfspace, "").strip().lower() if col_halfspace else ""
-                is_halfspace = hs_str in ("1", "true", "yes") or thickness == 0
+                is_last = (row_idx == n_rows - 1)
+                is_halfspace = hs_str in ("1", "true", "yes") or (thickness == 0 and is_last)
 
                 layer = Layer(
                     thickness=thickness,
@@ -477,6 +479,9 @@ class SoilProfile:
                 continue
             d = float(d_str)
             v = float(v_str)
+            # Deduplicate consecutive rows with identical (depth, vs)
+            if pairs and abs(pairs[-1][0] - d) < 1e-9 and abs(pairs[-1][1] - v) < 1e-6:
+                continue
             pairs.append((d, v))
 
         if len(pairs) < 2:
@@ -507,6 +512,9 @@ class SoilProfile:
         profile = cls(name=name)
         for idx, (th, vs) in enumerate(layers_data):
             is_hs = (idx == len(layers_data) - 1)
+            # Skip zero-thickness non-halfspace layers (safety guard)
+            if not is_hs and th <= 0:
+                continue
             profile.add_layer(Layer(
                 thickness=0 if is_hs else th,
                 vs=vs,

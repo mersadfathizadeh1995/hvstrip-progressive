@@ -228,26 +228,49 @@ def compute_forward(
     # Resolve profile path
     from ..core.soil_profile import SoilProfile
 
+    import tempfile
+
     if isinstance(profile_or_path, SoilProfile):
-        # Write a temp file for the engine
-        import tempfile
-        tmp = tempfile.NamedTemporaryFile(
-            suffix=".txt", delete=False, mode="w"
-        )
-        tmp.write(profile_or_path.to_hvf_format())
-        tmp.close()
-        model_path = tmp.name
         profile = profile_or_path
         profile_name = profile.name or "unnamed"
         profile_path = ""
     else:
-        model_path = str(profile_or_path)
-        profile_name = Path(model_path).stem
-        profile_path = model_path
+        # Load from file — supports CSV, Excel, HVf, Dinver, etc.
+        file_path = str(profile_or_path)
+        profile_name = Path(file_path).stem
+        profile_path = file_path
         try:
-            profile = load_profile(model_path)
-        except Exception:
-            profile = None
+            profile = load_profile(file_path)
+        except Exception as exc:
+            logger.error("Failed to load profile from %s: %s", file_path, exc)
+            return ForwardResult(
+                profile_name=profile_name,
+                profile_path=profile_path,
+                engine_name=config.engine.name if config else "",
+                error=f"Failed to load profile: {exc}",
+                success=False,
+            )
+
+    # Validate profile before running engine
+    valid, errors = profile.validate()
+    if not valid:
+        err_msg = "; ".join(errors)
+        logger.error("Profile validation failed for %s: %s", profile_name, err_msg)
+        return ForwardResult(
+            profile_name=profile_name,
+            profile_path=profile_path,
+            engine_name=config.engine.name,
+            error=f"Profile validation failed: {err_msg}",
+            success=False,
+        )
+
+    # Write temp HVf file for the engine (all engines expect HVf format)
+    tmp = tempfile.NamedTemporaryFile(
+        suffix=".txt", delete=False, mode="w"
+    )
+    tmp.write(profile.to_hvf_format())
+    tmp.close()
+    model_path = tmp.name
 
     engine_cfg = _build_engine_config(config)
     t0 = time.perf_counter()
