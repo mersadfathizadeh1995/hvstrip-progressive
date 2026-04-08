@@ -487,27 +487,50 @@ class SoilProfile:
         if len(pairs) < 2:
             raise ValueError("Depth-step CSV needs at least 2 rows")
 
-        # Extract constant-velocity segments from the step function
+        # Extract constant-velocity segments from the step function.
+        # A well-formed staircase repeats (depth, vs) pairs for each layer.
+        # Sub-discretised profiles may have many intermediate same-Vs
+        # points (e.g. 4 rows all at Vs=382 spanning different depths).
+        # We scan forward through all consecutive same-Vs points and
+        # take the full depth span as the layer thickness.
         layers_data = []  # (thickness, vs)
         i = 0
         while i < len(pairs) - 1:
             d_top, vs_top = pairs[i]
-            # Find the bottom of this constant-velocity segment
-            if i + 1 < len(pairs) and abs(pairs[i + 1][1] - vs_top) < 1e-6:
-                d_bot = pairs[i + 1][0]
-                thickness = d_bot - d_top
-                layers_data.append((thickness, vs_top))
-                i += 2
+            # Advance j past all points with the same Vs
+            j = i + 1
+            while j < len(pairs) and abs(pairs[j][1] - vs_top) < 1e-6:
+                j += 1
+            # j is now the first point with a different Vs (or end)
+            last_same = j - 1
+            if last_same > i:
+                # Multiple same-Vs points — layer spans first to last
+                d_bot = pairs[last_same][0]
             else:
-                # Single point — use next depth as boundary
-                d_bot = pairs[i + 1][0]
-                thickness = d_bot - d_top
+                # Single point — use the next point's depth as boundary
+                d_bot = pairs[j][0] if j < len(pairs) else d_top
+            thickness = d_bot - d_top
+            if thickness > 0:
                 layers_data.append((thickness, vs_top))
-                i += 1
+            i = j
 
         # Handle trailing single point as half-space
         if i == len(pairs) - 1:
             layers_data.append((0, pairs[i][1]))
+
+        # Merge consecutive layers with the same Vs (sub-discretised
+        # staircase CSVs may split one geological layer into multiple
+        # depth intervals that share the same velocity).
+        merged: list = []
+        for th, vs in layers_data:
+            if (merged
+                    and abs(merged[-1][1] - vs) < 1e-6
+                    and th > 0
+                    and merged[-1][0] > 0):
+                merged[-1] = (merged[-1][0] + th, vs)
+            else:
+                merged.append([th, vs])
+        layers_data = [(th, vs) for th, vs in merged]
 
         profile = cls(name=name)
         for idx, (th, vs) in enumerate(layers_data):
