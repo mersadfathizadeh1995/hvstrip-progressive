@@ -330,6 +330,7 @@ def compute_forward_batch(
     profiles: List[Any],
     config: Optional[HVStripConfig] = None,
     detect_peaks: bool = True,
+    progress_cb=None,
 ) -> MultiForwardResult:
     """Compute forward HV curves for multiple profiles.
 
@@ -347,10 +348,15 @@ def compute_forward_batch(
     if config is None:
         config = HVStripConfig()
 
+    from ._progress import emit
+
     t0 = time.perf_counter()
     results: List[ForwardResult] = []
 
-    for prof in profiles:
+    for i, prof in enumerate(profiles):
+        label = getattr(prof, "name", None) or str(prof)
+        emit(progress_cb, type="profile", index=i + 1, total=len(profiles),
+             profile=label)
         res = compute_forward(
             prof, config=config, detect_peaks=detect_peaks
         )

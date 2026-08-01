@@ -1,0 +1,89 @@
+{
+ "steps": {
+  "Step0_6-layer": {
+   "amp_max": 13.089979,
+   "amp_sum": 1164.414165,
+   "curve_n": 512,
+   "f_at_max": 4.244633,
+   "f_first": 0.2,
+   "f_last": 20.0,
+   "n_frequencies": 512,
+   "peak_amplitude": 13.089979,
+   "peak_frequency": 4.244633,
+   "peak_index": 339,
+   "vs30": 355.69,
+   "vs30_extrapolated": false
+  },
+  "Step1_5-layer": {
+   "amp_max": 11.905231,
+   "amp_sum": 1117.909425,
+   "curve_n": 512,
+   "f_at_max": 4.244633,
+   "f_first": 0.2,
+   "f_last": 20.0,
+   "n_frequencies": 512,
+   "peak_amplitude": 11.905231,
+   "peak_frequency": 4.244633,
+   "peak_index": 339,
+   "vs30": 355.69,
+   "vs30_extrapolated": true
+  },
+  "Step2_4-layer": {
+   "amp_max": 11.187983,
+   "amp_sum": 1090.913041,
+   "curve_n": 512,
+   "f_at_max": 4.283059,
+   "f_first": 0.2,
+   "f_last": 20.0,
+   "n_frequencies": 512,
+   "peak_amplitude": 11.187983,
+   "peak_frequency": 4.283059,
+   "peak_index": 340,
+   "vs30": 354.62,
+   "vs30_extrapolated": true
+  },
+  "Step3_3-layer": {
+   "amp_max": 10.856405,
+   "amp_sum": 1079.304321,
+   "curve_n": 512,
+   "f_at_max": 4.283059,
+   "f_first": 0.2,
+   "f_last": 20.0,
+   "n_frequencies": 512,
+   "peak_amplitude": 10.856405,
+   "peak_frequency": 4.283059,
+   "peak_index": 340,
+   "vs30": 353.51,
+   "vs30_extrapolated": true
+  },
+  "Step4_2-layer": {
+   "amp_max": 8.148708,
+   "amp_sum": 988.959353,
+   "curve_n": 512,
+   "f_at_max": 4.304436,
+   "f_first": 0.2,
+   "f_last": 40.0,
+   "n_frequencies": 512,
+   "peak_amplitude": 8.148708,
+   "peak_frequency": 4.304436,
+   "peak_index": 296,
+   "vs30": 338.95,
+   "vs30_extrapolated": true
+  },
+  "Step5_1-layer": {
+   "amp_max": 3.85181,
+   "amp_sum": 755.580929,
+   "curve_n": 512,
+   "f_at_max": 4.580725,
+   "f_first": 0.2,
+   "f_last": 40.0,
+   "n_frequencies": 512,
+   "peak_amplitude": 3.85181,
+   "peak_frequency": 4.580725,
+   "peak_index": 302,
+   "vs30": 282.64,
+   "vs30_extrapolated": true
+  }
+ },
+ "success": true
+}

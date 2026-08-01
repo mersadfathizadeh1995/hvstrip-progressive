@@ -1,7 +1,7 @@
 """Tests for the engine abstraction layer."""
 
 import pytest
-from hvstrip_progressive.core.engines import (
+from HV_Strip_Progressive.core.engines import (
     registry,
     BaseForwardEngine,
     EngineResult,
@@ -49,7 +49,7 @@ class TestDiffuseFieldEngine:
         assert "nf" in cfg
 
     def test_format_model_returns_hvf_string(self):
-        from hvstrip_progressive.core.soil_profile import SoilProfile, Layer
+        from HV_Strip_Progressive.core.soil_profile import SoilProfile, Layer
 
         engine = DiffuseFieldEngine()
         profile = SoilProfile(name="test")
@@ -136,7 +136,7 @@ class TestSHWaveEngineIntegration:
 
     def test_format_model_returns_hvf_string(self):
         """Verify format_model produces valid HVf text."""
-        from hvstrip_progressive.core.soil_profile import SoilProfile, Layer
+        from HV_Strip_Progressive.core.soil_profile import SoilProfile, Layer
 
         engine = SHWaveEngine()
         profile = SoilProfile(name="test")
@@ -163,7 +163,7 @@ class TestHvForwardFacade:
     """Test the backward-compatible hv_forward facade."""
 
     def test_default_config_matches_engine(self):
-        from hvstrip_progressive.core.hv_forward import DEFAULT_CONFIG
+        from HV_Strip_Progressive.core.hv_forward import DEFAULT_CONFIG
 
         engine_cfg = DiffuseFieldEngine().get_default_config()
         assert DEFAULT_CONFIG["fmin"] == engine_cfg["fmin"]

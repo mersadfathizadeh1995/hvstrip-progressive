@@ -65,6 +65,10 @@ include = ["HV_Strip_Progressive*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# pytest-qt is DISABLED package-wide: no test uses qtbot (manual QApplication
+# fixtures per the house pattern), and its runtest hooks process events on
+# the live widget tree, aborting PySide6 suites (the known family trap).
+addopts = "-p no:pytest-qt"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]

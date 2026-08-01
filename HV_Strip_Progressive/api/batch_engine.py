@@ -84,6 +84,7 @@ def run_batch_stripping(
     output_dir: str,
     config: Optional[HVStripConfig] = None,
     generate_report: bool = True,
+    progress_cb=None,
 ) -> BatchStripResult:
     """Run progressive stripping on multiple profiles.
 
@@ -110,11 +111,15 @@ def run_batch_stripping(
 
     results: List[ProfileStripResult] = []
 
-    for profile_path in profiles:
+    from ._progress import emit
+
+    for i, profile_path in enumerate(profiles):
         name = Path(profile_path).stem
         profile_out = os.path.join(output_dir, name)
 
         logger.info("Batch stripping: %s → %s", name, profile_out)
+        emit(progress_cb, type="profile", index=i + 1, total=len(profiles),
+             profile=name)
 
         try:
             strip_res = run_stripping(
@@ -122,6 +127,7 @@ def run_batch_stripping(
                 output_dir=profile_out,
                 config=config,
                 generate_report=generate_report,
+                progress_cb=progress_cb,
             )
             results.append(ProfileStripResult(
                 profile_name=name,

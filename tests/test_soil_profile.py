@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from hvstrip_progressive.core.soil_profile import Layer, SoilProfile
-from hvstrip_progressive.core.velocity_utils import VelocityConverter
+from HV_Strip_Progressive.core.soil_profile import Layer, SoilProfile
+from HV_Strip_Progressive.core.velocity_utils import VelocityConverter
 
 
 class TestLayer:

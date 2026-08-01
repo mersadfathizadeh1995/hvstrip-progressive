@@ -22,6 +22,22 @@ from .profile_io import profile_to_dict, profile_from_dict, save_profile
 logger = logging.getLogger(__name__)
 
 
+def load_config_payload(payload: Any) -> HVStripConfig:
+    """THE one config-load funnel.
+
+    Every persisted-config surface (session ``config.json``, the standalone
+    ``~/.hvstrip/settings.yaml`` payload, the HV Pro project
+    ``hvstrip_state_io`` payload) loads through here: a v2 dataclass payload
+    (``config_version: 2``) applies directly; anything else is treated as
+    the RETIRED legacy GUI dict and migrated best-effort
+    (:meth:`HVStripConfig.from_legacy_gui_dict`).  Saves always write v2
+    (``HVStripConfig.to_dict()``).
+    """
+    if not isinstance(payload, dict):
+        return HVStripConfig()
+    return HVStripConfig.from_dict(payload)
+
+
 def save_session(
     analysis: "HVStripAnalysis",
     session_dir: str,

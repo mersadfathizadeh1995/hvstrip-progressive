@@ -112,6 +112,10 @@ def load_profile(
 
     if fmt in ("hvf", "txt"):
         profile = SoilProfile.from_hvf_file(path)
+    elif fmt == "simple":
+        # Simple TXT: tries HVf first, falls back to bare columns (the
+        # legacy GUI's "Simple TXT" mode).
+        profile = SoilProfile.from_txt_file(path)
     elif fmt == "csv":
         profile = SoilProfile.from_csv_file(path)
     elif fmt == "dinver":
@@ -137,6 +141,88 @@ def load_profile(
         path,
     )
     return profile
+
+
+def load_profile_dinver(
+    vs_file: str,
+    vp_file: Optional[str] = None,
+    rho_file: Optional[str] = None,
+    name: Optional[str] = None,
+) -> SoilProfile:
+    """Load a profile from SEPARATE Dinver files (Vs required; Vp/ρ optional).
+
+    The legacy GUI's "Dinver Files" mode — three step-polyline/model files.
+    Missing Vp/density are derived from Vs by the core loader.
+    """
+    if not os.path.isfile(str(vs_file)):
+        raise FileNotFoundError(f"Vs file not found: {vs_file}")
+    profile = SoilProfile.from_dinver_files(
+        str(vs_file),
+        vp_file=str(vp_file) if vp_file else None,
+        rho_file=str(rho_file) if rho_file else None,
+        name=name,
+    )
+    if not profile.name:
+        profile.name = Path(str(vs_file)).stem
+    logger.info(
+        "Loaded dinver profile '%s' (%d layers)", profile.name,
+        len(profile.layers),
+    )
+    return profile
+
+
+def load_profile_dinver_prefix(
+    prefix: str,
+    name: Optional[str] = None,
+) -> SoilProfile:
+    """Load a Dinver profile family by common prefix
+    (``<prefix>_vs.txt`` / ``_vp.txt`` / ``_rho.txt``)."""
+    return SoilProfile.from_dinver_prefix(str(prefix), name=name)
+
+
+def load_profiles_from_directory(
+    directory: str,
+    pattern: str = "*.txt",
+) -> Tuple[List[SoilProfile], List[Tuple[str, str]]]:
+    """Load every matching profile file in *directory*.
+
+    Returns ``(profiles, errors)`` where *errors* is a list of
+    ``(path, reason)`` — per-file failures are collected, never fatal.
+    """
+    folder = Path(str(directory))
+    if not folder.is_dir():
+        raise NotADirectoryError(f"Not a directory: {directory}")
+    profiles: List[SoilProfile] = []
+    errors: List[Tuple[str, str]] = []
+    for path in sorted(folder.glob(pattern)):
+        try:
+            profiles.append(load_profile(str(path)))
+        except Exception as exc:                          # noqa: BLE001
+            errors.append((str(path), str(exc)))
+    logger.info(
+        "Directory load %s: %d profiles, %d errors",
+        directory, len(profiles), len(errors),
+    )
+    return profiles, errors
+
+
+def suggest_layer_fill(vs: float, nu: Optional[float] = None) -> Dict[str, Any]:
+    """The ONE derivation surface for the layer table's auto-fill.
+
+    Given Vs, suggest Poisson's ratio (or take the USER-TYPED *nu*), derive
+    Vp from it, and suggest a density + soil-type description — all via
+    :class:`core.velocity_utils.VelocityConverter` (the GUI must NOT carry
+    its own empirical tables or physics; the legacy table's local copies
+    diverged from core).
+    """
+    vs = float(vs)
+    nu = VelocityConverter.suggest_nu(vs) if nu is None else float(nu)
+    return {
+        "nu": nu,
+        "vp": VelocityConverter.vp_from_vs_nu(vs, nu),
+        "density": VelocityConverter.suggest_density(vs),
+        "soil_type": VelocityConverter.get_soil_type_description(vs),
+    }
 
 
 def create_profile(

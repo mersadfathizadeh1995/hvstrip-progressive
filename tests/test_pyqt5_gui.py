@@ -23,7 +23,7 @@ from matplotlib.figure import Figure
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "hvstrip_progressive"))
+sys.path.insert(0, str(PROJECT_ROOT / "HV_Strip_Progressive"))
 
 
 @pytest.fixture(scope="session")
@@ -37,7 +37,7 @@ def qapp():
 
 @pytest.fixture
 def example_model():
-    return str(PROJECT_ROOT / "examples" / "example_model.txt")
+    return str(PROJECT_ROOT / "examples" / "different_files" / "example_model.txt")
 
 
 def _make_step_folder(parent, step, n_layers, model_text, freqs, amps):
@@ -75,12 +75,12 @@ def strip_dir(tmp_path):
 class TestHVStripWindow:
 
     def test_window_creates(self, qapp):
-        from HV_Strip_Progressive.strip_window import HVStripWindow
+        from HV_Strip_Progressive.gui.strip_window import HVStripWindow
         w = HVStripWindow()
         assert w.windowTitle() == "HVSR Progressive Layer Stripping Analysis"
 
     def test_menu_bar(self, qapp):
-        from HV_Strip_Progressive.strip_window import HVStripWindow
+        from HV_Strip_Progressive.gui.strip_window import HVStripWindow
         w = HVStripWindow()
         mb = w.menuBar()
         actions = [a.text() for a in mb.actions()]
@@ -90,15 +90,16 @@ class TestHVStripWindow:
         assert "&Help" in actions
 
     def test_control_tabs(self, qapp):
-        from HV_Strip_Progressive.strip_window import HVStripWindow
+        from HV_Strip_Progressive.gui.strip_window import HVStripWindow
         w = HVStripWindow()
-        # New layout: 2 main tabs (Forward Model, HV Strip), each with 2 sub-tabs
-        assert w._main_tabs.count() == 2
+        # Layout: 3 main tabs (Forward Model, HV Strip, Research); the first
+        # two each carry 2 sub-tabs (Single | Multiple / Single | Batch).
+        assert w._main_tabs.count() == 3
         assert w._fwd_tabs.count() == 2
         assert w._strip_tabs.count() == 2
 
     def test_view_tabs(self, qapp):
-        from HV_Strip_Progressive.strip_window import HVStripWindow
+        from HV_Strip_Progressive.gui.strip_window import HVStripWindow
         w = HVStripWindow()
         # Canvas tabs vary per mode; default mode is forward_single with 3 tabs
         canvas = w.get_active_canvas()
@@ -106,13 +107,13 @@ class TestHVStripWindow:
         assert canvas.count() >= 3
 
     def test_panel_types(self, qapp):
-        from HV_Strip_Progressive.strip_window import HVStripWindow
-        from HV_Strip_Progressive.panels.forward_single_panel import ForwardSinglePanel
-        from HV_Strip_Progressive.panels.forward_multi_panel import ForwardMultiPanel
-        from HV_Strip_Progressive.panels.strip_single_panel import StripSinglePanel
-        from HV_Strip_Progressive.panels.strip_batch_panel import StripBatchPanel
+        from HV_Strip_Progressive.gui.strip_window import HVStripWindow
+        from HV_Strip_Progressive.gui.panels.forward_single_panel import ForwardSinglePanel
+        from HV_Strip_Progressive.gui.panels.forward_multi_panel import ForwardMultiPanel
+        from HV_Strip_Progressive.gui.panels.strip_single_panel import StripSinglePanel
+        from HV_Strip_Progressive.gui.panels.strip_batch_panel import StripBatchPanel
         w = HVStripWindow()
-        from HV_Strip_Progressive.strip_window import (
+        from HV_Strip_Progressive.gui.strip_window import (
             MODE_FWD_SINGLE, MODE_FWD_MULTI,
             MODE_STRIP_SINGLE, MODE_STRIP_BATCH,
         )
@@ -123,32 +124,32 @@ class TestHVStripWindow:
         assert MODE_STRIP_BATCH in w._panels
 
     def test_view_types(self, qapp):
-        from HV_Strip_Progressive.strip_window import HVStripWindow
-        from HV_Strip_Progressive.views.log_view import LogView
+        from HV_Strip_Progressive.gui.strip_window import HVStripWindow
+        from HV_Strip_Progressive.gui.views.log_view import LogView
         w = HVStripWindow()
         # Log view is always present
         assert hasattr(w, '_log_view')
 
     def test_engine_combo(self, qapp):
-        from HV_Strip_Progressive.strip_window import HVStripWindow
+        from HV_Strip_Progressive.gui.strip_window import HVStripWindow
         w = HVStripWindow()
         # Engine is now per-panel; test via the public API
         name = w.get_engine_name()
         assert name in ("diffuse_field", "sh_wave", "ellipticity")
 
     def test_log(self, qapp):
-        from HV_Strip_Progressive.strip_window import HVStripWindow
+        from HV_Strip_Progressive.gui.strip_window import HVStripWindow
         w = HVStripWindow()
         w.log("Test message")
 
     def test_set_status(self, qapp):
-        from HV_Strip_Progressive.strip_window import HVStripWindow
+        from HV_Strip_Progressive.gui.strip_window import HVStripWindow
         w = HVStripWindow()
         w.set_status("Testing")
         assert w._status_msg.text() == "Testing"
 
     def test_set_result(self, qapp):
-        from HV_Strip_Progressive.strip_window import HVStripWindow
+        from HV_Strip_Progressive.gui.strip_window import HVStripWindow
         w = HVStripWindow()
         w.set_result({"strip_directory": "/tmp/test", "step_results": {}})
         assert w._last_strip_dir == "/tmp/test"
@@ -161,18 +162,18 @@ class TestHVStripWindow:
 class TestInputPanel:
 
     def test_creates(self, qapp):
-        from HV_Strip_Progressive.panels.input_panel import InputPanel
+        from HV_Strip_Progressive.gui.panels.input_panel import InputPanel
         p = InputPanel()
         assert p is not None
 
     def test_load_profile(self, qapp, example_model):
-        from HV_Strip_Progressive.panels.input_panel import InputPanel
+        from HV_Strip_Progressive.gui.panels.input_panel import InputPanel
         p = InputPanel()
         p.load_profile(example_model)
         assert p.get_model_path() == example_model
 
     def test_get_output_dir(self, qapp):
-        from HV_Strip_Progressive.panels.input_panel import InputPanel
+        from HV_Strip_Progressive.gui.panels.input_panel import InputPanel
         p = InputPanel()
         p._output_edit.setText("/tmp/output")
         assert p.get_output_dir() == "/tmp/output"
@@ -185,12 +186,12 @@ class TestInputPanel:
 class TestConfigPanel:
 
     def test_creates(self, qapp):
-        from HV_Strip_Progressive.panels.config_panel import ConfigPanel
+        from HV_Strip_Progressive.gui.panels.config_panel import ConfigPanel
         p = ConfigPanel()
         assert p is not None
 
     def test_get_config(self, qapp):
-        from HV_Strip_Progressive.panels.config_panel import ConfigPanel
+        from HV_Strip_Progressive.gui.panels.config_panel import ConfigPanel
         p = ConfigPanel()
         cfg = p.get_config()
         assert "hv_forward" in cfg
@@ -200,13 +201,13 @@ class TestConfigPanel:
         assert "plot" in cfg
 
     def test_engine_name(self, qapp):
-        from HV_Strip_Progressive.panels.config_panel import ConfigPanel
+        from HV_Strip_Progressive.gui.panels.config_panel import ConfigPanel
         p = ConfigPanel()
         p._engine_combo.setCurrentText("sh_wave")
         assert p.get_engine_name() == "sh_wave"
 
     def test_peak_detection_config(self, qapp):
-        from HV_Strip_Progressive.panels.config_panel import ConfigPanel
+        from HV_Strip_Progressive.gui.panels.config_panel import ConfigPanel
         p = ConfigPanel()
         p._min_prom.setValue(1.5)
         cfg = p.get_config()
@@ -220,12 +221,12 @@ class TestConfigPanel:
 class TestRunPanel:
 
     def test_creates(self, qapp):
-        from HV_Strip_Progressive.panels.run_panel import RunPanel
+        from HV_Strip_Progressive.gui.panels.run_panel import RunPanel
         p = RunPanel()
         assert p is not None
 
     def test_set_batch_folder(self, qapp, tmp_path):
-        from HV_Strip_Progressive.panels.run_panel import RunPanel
+        from HV_Strip_Progressive.gui.panels.run_panel import RunPanel
         p = RunPanel()
         (tmp_path / "a.txt").write_text("1\n0.0 200.0 100.0 1.8\n")
         (tmp_path / "b.txt").write_text("1\n0.0 300.0 150.0 1.9\n")
@@ -240,12 +241,12 @@ class TestRunPanel:
 class TestHVCurveView:
 
     def test_creates(self, qapp):
-        from HV_Strip_Progressive.views.hv_curve_view import HVCurveView
+        from HV_Strip_Progressive.gui.views.hv_curve_view import HVCurveView
         v = HVCurveView()
         assert v is not None
 
     def test_set_data(self, qapp):
-        from HV_Strip_Progressive.views.hv_curve_view import HVCurveView
+        from HV_Strip_Progressive.gui.views.hv_curve_view import HVCurveView
         v = HVCurveView()
         freqs = np.linspace(0.5, 20, 100)
         amps = 2 + 3 * np.exp(-0.5 * ((freqs - 5) / 0.8) ** 2)
@@ -255,7 +256,7 @@ class TestHVCurveView:
 class TestVsProfileView:
 
     def test_creates(self, qapp):
-        from HV_Strip_Progressive.views.vs_profile_view import VsProfileView
+        from HV_Strip_Progressive.gui.views.vs_profile_view import VsProfileView
         v = VsProfileView()
         assert v is not None
 
@@ -263,12 +264,12 @@ class TestVsProfileView:
 class TestHVOverlayView:
 
     def test_creates(self, qapp):
-        from HV_Strip_Progressive.views.hv_overlay_view import HVOverlayView
+        from HV_Strip_Progressive.gui.views.hv_overlay_view import HVOverlayView
         v = HVOverlayView()
         assert v is not None
 
     def test_load_strip_dir(self, qapp, strip_dir):
-        from HV_Strip_Progressive.views.hv_overlay_view import HVOverlayView
+        from HV_Strip_Progressive.gui.views.hv_overlay_view import HVOverlayView
         v = HVOverlayView()
         v.load_strip_dir(str(strip_dir))
 
@@ -276,12 +277,12 @@ class TestHVOverlayView:
 class TestStripResultsView:
 
     def test_creates(self, qapp):
-        from HV_Strip_Progressive.views.strip_results_view import StripResultsView
+        from HV_Strip_Progressive.gui.views.strip_results_view import StripResultsView
         v = StripResultsView()
         assert v is not None
 
     def test_set_results(self, qapp):
-        from HV_Strip_Progressive.views.strip_results_view import StripResultsView
+        from HV_Strip_Progressive.gui.views.strip_results_view import StripResultsView
         v = StripResultsView()
         v.set_results({
             "step_results": {
@@ -294,12 +295,12 @@ class TestStripResultsView:
 class TestLogView:
 
     def test_creates(self, qapp):
-        from HV_Strip_Progressive.views.log_view import LogView
+        from HV_Strip_Progressive.gui.views.log_view import LogView
         v = LogView()
         assert v is not None
 
     def test_append(self, qapp):
-        from HV_Strip_Progressive.views.log_view import LogView
+        from HV_Strip_Progressive.gui.views.log_view import LogView
         v = LogView()
         v.append("Test message")
         v.append("Error: something")
@@ -312,11 +313,11 @@ class TestLogView:
 class TestFigureStudio:
 
     def test_import(self, qapp):
-        from HV_Strip_Progressive.dialogs.figure_studio import FigureStudioWindow
+        from HV_Strip_Progressive.gui.dialogs.figure_studio import FigureStudioWindow
         assert FigureStudioWindow is not None
 
     def test_settings_panels(self, qapp):
-        from HV_Strip_Progressive.dialogs.figure_studio import (
+        from HV_Strip_Progressive.gui.dialogs.figure_studio import (
             HVOverlayPanel, PeakEvolutionPanel, InterfaceAnalysisPanel,
             WaterfallPanel, PublicationPanel, DualResonancePanel,
         )
@@ -327,7 +328,7 @@ class TestFigureStudio:
             assert isinstance(kw, dict), f"{cls.__name__} failed"
 
     def test_overlay_panel_defaults(self, qapp):
-        from HV_Strip_Progressive.dialogs.figure_studio import HVOverlayPanel
+        from HV_Strip_Progressive.gui.dialogs.figure_studio import HVOverlayPanel
         p = HVOverlayPanel()
         kw = p.get_kwargs()
         assert kw["log_x"] is True
@@ -335,7 +336,7 @@ class TestFigureStudio:
         assert kw["show_peaks"] is True
 
     def test_dr_panel_offsets(self, qapp):
-        from HV_Strip_Progressive.dialogs.figure_studio import DualResonancePanel
+        from HV_Strip_Progressive.gui.dialogs.figure_studio import DualResonancePanel
         p = DualResonancePanel()
         kw = p.get_kwargs()
         assert kw["f0_offset"] == (0.0, 0.0)
@@ -346,12 +347,12 @@ class TestFigureStudio:
 class TestPeakPickerDialog:
 
     def test_creates_empty(self, qapp):
-        from HV_Strip_Progressive.dialogs.peak_picker_dialog import PeakPickerDialog
+        from HV_Strip_Progressive.gui.dialogs.peak_picker_dialog import PeakPickerDialog
         dlg = PeakPickerDialog({"step_results": {}})
         assert dlg._step_list.count() == 0
 
     def test_auto_detect(self, qapp, strip_dir):
-        from HV_Strip_Progressive.dialogs.peak_picker_dialog import PeakPickerDialog
+        from HV_Strip_Progressive.gui.dialogs.peak_picker_dialog import PeakPickerDialog
         # Build result dict with step data pointing to strip_dir
         steps = {}
         for d in sorted(strip_dir.iterdir()):
@@ -364,7 +365,7 @@ class TestPeakPickerDialog:
         assert len(dlg._selected) == 1
 
     def test_undo(self, qapp, strip_dir):
-        from HV_Strip_Progressive.dialogs.peak_picker_dialog import PeakPickerDialog
+        from HV_Strip_Progressive.gui.dialogs.peak_picker_dialog import PeakPickerDialog
         steps = {}
         for d in sorted(strip_dir.iterdir()):
             hv = d / "hv_curve.csv"
@@ -380,7 +381,7 @@ class TestPeakPickerDialog:
 class TestProfileLoaderDialog:
 
     def test_creates(self, qapp):
-        from HV_Strip_Progressive.dialogs.profile_loader_dialog import ProfileLoaderDialog
+        from HV_Strip_Progressive.gui.dialogs.profile_loader_dialog import ProfileLoaderDialog
         dlg = ProfileLoaderDialog()
         assert dlg is not None
 
@@ -388,12 +389,12 @@ class TestProfileLoaderDialog:
 class TestEngineSettingsDialog:
 
     def test_creates(self, qapp):
-        from HV_Strip_Progressive.dialogs.engine_settings_dialog import EngineSettingsDialog
+        from HV_Strip_Progressive.gui.dialogs.engine_settings_dialog import EngineSettingsDialog
         dlg = EngineSettingsDialog({})
         assert dlg is not None
 
     def test_get_config(self, qapp):
-        from HV_Strip_Progressive.dialogs.engine_settings_dialog import EngineSettingsDialog
+        from HV_Strip_Progressive.gui.dialogs.engine_settings_dialog import EngineSettingsDialog
         dlg = EngineSettingsDialog({"diffuse_field": {"fmin": 0.5}})
         cfg = dlg.get_config()
         assert isinstance(cfg, dict)
@@ -402,12 +403,12 @@ class TestEngineSettingsDialog:
 class TestDualResonanceDialog:
 
     def test_creates(self, qapp):
-        from HV_Strip_Progressive.dialogs.dual_resonance_settings_dialog import DualResonanceSettingsDialog
+        from HV_Strip_Progressive.gui.dialogs.dual_resonance_settings_dialog import DualResonanceSettingsDialog
         dlg = DualResonanceSettingsDialog()
         assert dlg is not None
 
     def test_defaults(self, qapp):
-        from HV_Strip_Progressive.dialogs.dual_resonance_settings_dialog import DualResonanceSettingsDialog
+        from HV_Strip_Progressive.gui.dialogs.dual_resonance_settings_dialog import DualResonanceSettingsDialog
         dlg = DualResonanceSettingsDialog(ratio=1.5, shift=0.4)
         vals = dlg.get_values()
         assert vals["separation_ratio_threshold"] == pytest.approx(1.5)
@@ -421,26 +422,31 @@ class TestDualResonanceDialog:
 class TestEngines:
 
     def test_sh_wave_forward(self, example_model):
-        from hvstrip_progressive.core.hv_forward import compute_hv_curve
+        from HV_Strip_Progressive.core.hv_forward import compute_hv_curve
         freqs, amps = compute_hv_curve(example_model, engine_name="sh_wave")
         assert len(freqs) > 0
         assert np.max(amps) > 1.0
 
     def test_diffuse_field_forward(self, example_model):
-        from hvstrip_progressive.core.hv_forward import compute_hv_curve
+        from HV_Strip_Progressive.core.hv_forward import compute_hv_curve
         freqs, amps = compute_hv_curve(example_model, engine_name="diffuse_field")
         assert len(freqs) > 0
 
     def test_ellipticity_forward(self, example_model):
-        from hvstrip_progressive.core.hv_forward import compute_hv_curve
-        freqs, amps = compute_hv_curve(example_model, engine_name="ellipticity")
+        # The ellipticity engine shells out to Geopsy's gpell via Git Bash —
+        # machine-local paths from local_config; skip when unavailable.
+        from HV_Strip_Progressive.core.hv_forward import compute_hv_curve
+        try:
+            freqs, amps = compute_hv_curve(example_model, engine_name="ellipticity")
+        except (FileNotFoundError, OSError, RuntimeError) as exc:
+            pytest.skip(f"gpell/git-bash not available on this machine: {exc}")
         assert len(freqs) > 0
 
 
 class TestWorkflow:
 
     def test_complete_workflow_sh_wave(self, example_model, tmp_path):
-        from hvstrip_progressive.core.batch_workflow import run_complete_workflow
+        from HV_Strip_Progressive.core.batch_workflow import run_complete_workflow
         out = tmp_path / "workflow_out"
         out.mkdir()
         result = run_complete_workflow(
@@ -451,7 +457,7 @@ class TestWorkflow:
         assert len(result["step_results"]) > 0
 
     def test_reporter(self, strip_dir):
-        from hvstrip_progressive.core.report_generator import ProgressiveStrippingReporter
+        from HV_Strip_Progressive.core.report_generator import ProgressiveStrippingReporter
         r = ProgressiveStrippingReporter(str(strip_dir))
         fig = Figure(figsize=(10, 6))
         ok = r.draw_hv_overlay_on_figure(fig)

@@ -127,6 +127,7 @@ def run_stripping(
     output_dir: str,
     config: Optional[HVStripConfig] = None,
     generate_report: bool = True,
+    progress_cb=None,
 ) -> StripResult:
     """Run the full progressive-stripping workflow.
 
@@ -144,6 +145,10 @@ def run_stripping(
     config : HVStripConfig, optional
     generate_report : bool
         Generate the full ProgressiveStrippingReporter report.
+    progress_cb : callable, optional
+        ``cb(frame: dict)`` — receives phase/log frames parsed from the
+        (frozen) core workflow's stdout narration plus api-level frames.
+        ``None`` (default) = the byte-identical legacy path.
 
     Returns
     -------
@@ -178,13 +183,21 @@ def run_stripping(
         workflow_cfg = config.build_workflow_config()
         workflow_cfg["generate_report"] = generate_report
 
-        # Run the core workflow
-        core_results = run_complete_workflow(
-            initial_model_path=model_path,
-            output_base_dir=output_dir,
-            workflow_config=workflow_cfg,
-            engine_name=config.engine.name,
-        )
+        # Run the core workflow — the stdout tee streams its narration as
+        # progress frames when a callback is supplied (core stays frozen).
+        from ._progress import emit, tee_progress
+
+        emit(progress_cb, type="op", op="strip", profile=profile_name,
+             state="started")
+        with tee_progress(progress_cb):
+            core_results = run_complete_workflow(
+                initial_model_path=model_path,
+                output_base_dir=output_dir,
+                workflow_config=workflow_cfg,
+                engine_name=config.engine.name,
+            )
+        emit(progress_cb, type="op", op="strip", profile=profile_name,
+             state="finished")
 
         elapsed = time.perf_counter() - t0
 
@@ -364,9 +377,22 @@ def _parse_core_results(
 
                 freqs, amps = read_hv_csv(str(hv_csv))
 
+            # Core step dicts carry no explicit layer count — the step name
+            # ("Step0_6-layer", core's own naming) is authoritative; the
+            # model-file header is the fallback (NOTE: the header counts the
+            # half-space, core's folder name does not).
+            n_layers = data.get("n_layers") or 0
+            if not n_layers and "-layer" in step_name:
+                try:
+                    n_layers = int(step_name.split("_")[-1].split("-")[0])
+                except (ValueError, IndexError):
+                    n_layers = 0
+            if not n_layers:
+                n_layers = _count_layers(str(data.get("model_file", "")))
+
             step = StepResult(
                 step_number=i,
-                n_layers=data.get("n_layers", 0),
+                n_layers=n_layers,
                 model_path=str(data.get("model_file", "")),
                 frequencies=freqs,
                 amplitudes=amps,

@@ -50,8 +50,8 @@ def build_ui(view) -> None:
     * ``MatplotlibWidget``, ``CollapsibleGroupBox``
     * Style constants: ``BUTTON_SUCCESS``, ``EMOJI``
     """
-    from HV_Strip_Progressive.widgets import CollapsibleGroupBox, MatplotlibWidget
-    from HV_Strip_Progressive.widgets.style_constants import BUTTON_SUCCESS, EMOJI
+    from HV_Strip_Progressive.gui.widgets import CollapsibleGroupBox, MatplotlibWidget
+    from HV_Strip_Progressive.gui.widgets.style_constants import BUTTON_SUCCESS, EMOJI
 
     main = QVBoxLayout(view)
     main.setContentsMargins(2, 2, 2, 2)
@@ -70,7 +70,7 @@ def build_ui(view) -> None:
 # ── Canvas splitter ────────────────────────────────────────────
 
 def _build_canvas_splitter(view, parent_layout) -> None:
-    from HV_Strip_Progressive.widgets import MatplotlibWidget
+    from HV_Strip_Progressive.gui.widgets import MatplotlibWidget
 
     view._splitter = QSplitter(Qt.Horizontal)
 
@@ -106,7 +106,7 @@ def _build_canvas_splitter(view, parent_layout) -> None:
 # ── Settings panel ─────────────────────────────────────────────
 
 def _build_settings_panel(view, parent_layout, CollapsibleGroupBox) -> None:
-    from HV_Strip_Progressive.widgets.style_constants import EMOJI
+    from HV_Strip_Progressive.gui.widgets.style_constants import EMOJI
 
     view._settings_group = CollapsibleGroupBox(
         f"{EMOJI.get('settings', '⚙')} Plot Settings", collapsed=True)

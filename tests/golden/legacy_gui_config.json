@@ -1,0 +1,120 @@
+{
+ "dual_resonance": {
+  "enable": false,
+  "separation_ratio_threshold": 1.2,
+  "separation_shift_threshold": 0.3
+ },
+ "engine": {
+  "name": "diffuse_field"
+ },
+ "engine_name": "diffuse_field",
+ "engine_settings": {
+  "diffuse_field": {
+   "exe_path": "D:\\Research\\Narm_Afzar\\Git_hub\\HV_Pro\\hvsr_pro\\packages\\hvstrip-progressive\\HV_Strip_Progressive\\gui\\core\\engines\\diffuse_wave_field\\exe_Win\\HVf.exe",
+   "fmax": 20.0,
+   "fmin": 0.2,
+   "nf": 71,
+   "nks": 10,
+   "nml": 10,
+   "nmr": 10
+  },
+  "ellipticity": {
+   "absolute": true,
+   "auto_q": false,
+   "clip_factor": 50.0,
+   "fmax": 20.0,
+   "fmin": 0.5,
+   "git_bash_path": "C:\\Users\\mersadf\\AppData\\Local\\Programs\\Git\\git-bash.exe",
+   "gpell_path": "C:\\Geopsy.org\\bin\\gpell.exe",
+   "love_alpha": 0.0,
+   "n_modes": 1,
+   "n_samples": 500,
+   "peak_refinement": false,
+   "q_formula": "default",
+   "sampling": "log",
+   "timeout": 30
+  },
+  "sh_wave": {
+   "Drock": 0.5,
+   "Dsoil": null,
+   "clip_tf": 0.0,
+   "d_tf": 0,
+   "darendeli_curvetype": 1,
+   "f0_search_fmax": null,
+   "f0_search_fmin": null,
+   "fmax": 30.0,
+   "fmin": 0.1,
+   "gamma_max": 23.0,
+   "n_samples": 512,
+   "sampling": "log"
+  }
+ },
+ "generate_report": true,
+ "hv_forward": {
+  "adaptive": {
+   "edge_margin_frac": 0.05,
+   "enable": true,
+   "fmax_expand_factor": 2.0,
+   "fmax_limit": 60.0,
+   "fmin_limit": 0.05,
+   "fmin_shrink_factor": 0.5,
+   "max_passes": 2
+  },
+  "exe_path": "D:\\Research\\Narm_Afzar\\Git_hub\\HV_Pro\\hvsr_pro\\packages\\hvstrip-progressive\\HV_Strip_Progressive\\gui\\core\\engines\\diffuse_wave_field\\exe_Win\\HVf.exe",
+  "fmax": 20.0,
+  "fmin": 0.2,
+  "nf": 71,
+  "nks": 10,
+  "nml": 10,
+  "nmr": 10
+ },
+ "hv_postprocess": {
+  "hv_plot": {
+   "dpi": 200,
+   "figure_height": 6,
+   "figure_width": 12,
+   "freq_window_left": 0.3,
+   "freq_window_right": 3.0,
+   "show_bands": true,
+   "smoothing": {
+    "enable": true,
+    "poly_order": 3,
+    "window_length": 9
+   },
+   "x_axis_scale": "log",
+   "y_axis_scale": "log",
+   "y_compression": 1.5
+  },
+  "output": {
+   "combined_filename": "combined_figure.png",
+   "hv_filename": "hv_curve.png",
+   "save_combined": true,
+   "save_separate": true,
+   "summary_filename": "step_summary.csv",
+   "vs_filename": "vs_profile.png"
+  },
+  "peak_detection": {
+   "preset": "default"
+  },
+  "vs_plot": {
+   "annotate_deepest": true,
+   "annotate_f0": true,
+   "annotate_max_vs": true,
+   "dpi": 200,
+   "figure_height": 8,
+   "figure_width": 6,
+   "show": true
+  }
+ },
+ "interactive_mode": false,
+ "peak_detection": {
+  "method": "find_peaks",
+  "preset": "default",
+  "select": "leftmost"
+ },
+ "plot": {
+  "dpi": 200,
+  "x_axis_scale": "log",
+  "y_axis_scale": "log"
+ }
+}

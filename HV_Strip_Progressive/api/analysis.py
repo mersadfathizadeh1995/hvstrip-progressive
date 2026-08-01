@@ -29,11 +29,14 @@ from .config import (
 )
 from .profile_io import (
     load_profile,
+    load_profile_dinver,
+    load_profiles_from_directory,
     create_profile,
     save_profile,
     profile_to_dict,
     profile_from_dict,
     get_profile_summary,
+    suggest_layer_fill,
     validate_profile,
 )
 from .forward_engine import (
@@ -108,6 +111,7 @@ class HVStripAnalysis:
         self._forward_results: Dict[str, ForwardResult] = {}
         self._strip_results: Dict[str, StripResult] = {}
         self._batch_result: Optional[BatchStripResult] = None
+        self._research_runner: Optional[Any] = None  # ComparisonStudyRunner
 
     # ------------------------------------------------------------------
     # Configuration
@@ -220,6 +224,45 @@ class HVStripAnalysis:
             "summary": summary.__dict__,
         }
 
+    def load_profile_dinver(
+        self,
+        vs_file: str,
+        vp_file: Optional[str] = None,
+        rho_file: Optional[str] = None,
+        name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Load a profile from SEPARATE Dinver files (Vs + optional Vp/ρ)
+        and add it to the session — the legacy "Dinver Files" input mode."""
+        profile = load_profile_dinver(
+            vs_file, vp_file=vp_file, rho_file=rho_file, name=name)
+        pname = profile.name
+        self._profiles[pname] = profile
+        summary = get_profile_summary(profile)
+        return {"name": pname, "path": str(vs_file),
+                "summary": summary.__dict__}
+
+    def load_profiles_from_directory(
+        self,
+        directory: str,
+        pattern: str = "*.txt",
+    ) -> Dict[str, Any]:
+        """Load every matching profile in *directory* into the session.
+
+        Per-file failures are collected under ``errors``, never fatal.
+        """
+        profiles, errors = load_profiles_from_directory(directory, pattern)
+        loaded = []
+        for profile in profiles:
+            pname = profile.name
+            self._profiles[pname] = profile
+            loaded.append(pname)
+        return {
+            "success": True,
+            "directory": str(directory),
+            "loaded": loaded,
+            "errors": [{"path": p, "error": e} for p, e in errors],
+        }
+
     def create_profile_from_layers(
         self,
         layers: List[Dict[str, Any]],
@@ -233,6 +276,33 @@ class HVStripAnalysis:
             "name": name,
             "summary": summary.__dict__,
         }
+
+    def update_profile(
+        self,
+        name: str,
+        layers: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Replace a profile's layers (the Data-stage table's Apply).
+
+        INVALIDATES that profile's forward/strip results — they no longer
+        describe the edited model.
+        """
+        if name not in self._profiles:
+            return {"success": False, "error": f"Profile '{name}' not found"}
+        profile = create_profile(layers, name=name)
+        self._profiles[name] = profile
+        self._forward_results.pop(name, None)
+        self._strip_results.pop(name, None)
+        summary = get_profile_summary(profile)
+        return {"success": True, "name": name, "summary": summary.__dict__}
+
+    @staticmethod
+    def suggest_layer_fill(
+        vs: float, nu: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Auto-fill suggestions (ν, Vp, density, soil type) for one Vs;
+        pass *nu* to derive Vp from a user-typed Poisson's ratio."""
+        return suggest_layer_fill(vs, nu=nu)
 
     def add_profile(self, name: str, profile: Any) -> Dict[str, Any]:
         """Add an existing SoilProfile object to the session."""
@@ -298,8 +368,13 @@ class HVStripAnalysis:
     def compute_forward_all(
         self,
         engine_name: Optional[str] = None,
+        progress_cb=None,
     ) -> Dict[str, Any]:
-        """Compute forward HV curves for all loaded profiles."""
+        """Compute forward HV curves for all loaded profiles.
+
+        ``progress_cb(frame: dict)`` receives one ``profile`` frame per
+        profile; ``None`` (default) = unchanged behaviour.
+        """
         profiles = list(self._profiles.values())
         if not profiles:
             return {"error": "No profiles loaded"}
@@ -309,7 +384,8 @@ class HVStripAnalysis:
             config.engine.name = engine_name
 
         multi_result = compute_forward_batch(
-            profiles, config=config, detect_peaks=True
+            profiles, config=config, detect_peaks=True,
+            progress_cb=progress_cb,
         )
 
         # Store individual results
@@ -370,8 +446,13 @@ class HVStripAnalysis:
         self,
         profile_name: Optional[str] = None,
         output_dir: Optional[str] = None,
+        progress_cb=None,
     ) -> Dict[str, Any]:
-        """Run progressive stripping on one profile."""
+        """Run progressive stripping on one profile.
+
+        ``progress_cb(frame: dict)`` streams phase/log frames parsed from
+        the (frozen) core workflow narration; ``None`` = unchanged.
+        """
         profile = self._resolve_profile(profile_name)
         if output_dir is None:
             output_dir = os.path.join(
@@ -384,6 +465,7 @@ class HVStripAnalysis:
             output_dir=output_dir,
             config=self._config,
             generate_report=self._config.strip.generate_report,
+            progress_cb=progress_cb,
         )
         self._strip_results[profile.name] = result
         return result.to_dict()
@@ -391,8 +473,14 @@ class HVStripAnalysis:
     def run_batch_stripping_all(
         self,
         output_dir: Optional[str] = None,
+        progress_cb=None,
     ) -> Dict[str, Any]:
-        """Run stripping on all loaded profiles."""
+        """Run stripping on all loaded profiles.
+
+        ``progress_cb(frame: dict)`` streams one ``profile`` frame per
+        profile plus the per-profile workflow narration; ``None`` =
+        unchanged behaviour.
+        """
         if not self._profiles:
             return {"error": "No profiles loaded"}
 
@@ -416,6 +504,7 @@ class HVStripAnalysis:
             profile_paths,
             output_dir=output_dir,
             config=self._config,
+            progress_cb=progress_cb,
         )
         self._batch_result = result
 
@@ -583,6 +672,148 @@ class HVStripAnalysis:
     def list_engines() -> List[Dict[str, Any]]:
         """List available forward engines."""
         return list_engines()
+
+    def check_engines(self) -> Dict[str, Any]:
+        """Cheap per-engine availability probe (existence checks ONLY —
+        never spawns a subprocess), so a GUI can surface per-tool status
+        instead of crashing on a missing binary.
+
+        Returns ``{engine: {"available": bool, "reason": str}}``.
+        """
+        import os
+        from pathlib import Path
+
+        report: Dict[str, Any] = {}
+
+        # sh_wave — pure Python, always available.
+        report["sh_wave"] = {"available": True, "reason": "pure Python"}
+
+        # diffuse_field — the vendored HVf executable (or a config override).
+        exe = self._config.engine.exe_path
+        if not exe:
+            base = Path(__file__).resolve().parent.parent / "core" / "engines" \
+                / "diffuse_wave_field"
+            for cand in (base / "exe_Win" / "HVf.exe",
+                         base / "exe_Linux" / "HVf",
+                         base / "exe_Linux" / "HVf_Serial"):
+                if cand.is_file():
+                    exe = str(cand)
+                    break
+        if exe and os.path.isfile(exe):
+            report["diffuse_field"] = {"available": True, "reason": exe}
+        else:
+            report["diffuse_field"] = {
+                "available": False,
+                "reason": "HVf executable not found "
+                          "(set EngineConfig.exe_path)",
+            }
+
+        # ellipticity — Geopsy gpell via Git Bash (config or local_config).
+        gpell = self._config.engine.gpell_path
+        bash = self._config.engine.git_bash_path
+        if not gpell or not bash:
+            try:
+                from .. import local_config as _lc
+
+                gpell = gpell or getattr(_lc, "GPELL_PATH", "")
+                bash = bash or getattr(_lc, "GIT_BASH_PATH", "")
+            except ImportError:
+                pass
+        missing = [label for label, path in
+                   (("gpell", gpell), ("git-bash", bash))
+                   if not (path and os.path.isfile(path))]
+        if not missing:
+            report["ellipticity"] = {"available": True, "reason": gpell}
+        else:
+            report["ellipticity"] = {
+                "available": False,
+                "reason": f"missing: {', '.join(missing)} "
+                          "(configure local_config.py)",
+            }
+        return report
+
+    def run_research_study(
+        self,
+        study_config: Optional[Dict[str, Any]] = None,
+        phase: str = "full",
+        progress_cb=None,
+        reset: bool = False,
+    ) -> Dict[str, Any]:
+        """Run the research comparison-study pipeline through the api.
+
+        Wraps :class:`research.runner.ComparisonStudyRunner` (what the GUI's
+        Research tab drives) behind the ONE facade.  ``phase`` is ``"full"``
+        or one of ``profiles | comparison | metrics | field_validation |
+        report``.  ``progress_cb`` receives the runner's ``(current, total,
+        message)`` progress as ``{"type": "study", ...}`` frames plus a
+        ``study_phase`` frame per completed phase.
+
+        The facade holds ONE runner across calls — the study phases are
+        stateful (profiles → dataset → metrics), so sequencing them as
+        separate calls (the GUI's cooperative-cancel loop) must land on the
+        same instance.  ``reset=True`` (or a new ``study_config``) starts a
+        fresh study.
+
+        ``study_config`` may carry a top-level ``profiles_dir`` (not a
+        ComparisonStudyConfig field): the profiles phase then LOADS that
+        existing suite (a folder of ``.txt`` models) instead of generating
+        one — the clean degrade path when SoilGen is not installed.
+        """
+        from ._progress import emit
+        from ..research.runner import ComparisonStudyRunner
+
+        if reset or self._research_runner is None:
+            self._research_runner = ComparisonStudyRunner()
+        runner = self._research_runner
+        profiles_dir = None
+        if study_config:
+            study_config = dict(study_config)
+            profiles_dir = study_config.pop("profiles_dir", None)
+            runner.configure(**study_config)
+        if progress_cb is not None:
+            runner.set_progress_callback(
+                lambda cur, total, msg: emit(
+                    progress_cb, type="study", index=cur, total=total,
+                    label=str(msg),
+                )
+            )
+
+        phases = {
+            "profiles": (
+                (lambda: runner.load_profiles(profiles_dir))
+                if profiles_dir else runner.generate_profiles),
+            "comparison": runner.run_comparison,
+            "metrics": runner.compute_metrics,
+            "field_validation": runner.run_field_validation,
+            "report": runner.generate_report,
+        }
+        try:
+            if phase == "full":
+                results: Dict[str, Any] = {}
+                for name, fn in phases.items():
+                    emit(progress_cb, type="study_phase", phase=name,
+                         state="started")
+                    results[name] = fn()
+                    if isinstance(results[name], dict) and \
+                            results[name].get("error"):
+                        return {"success": False, "phase": name,
+                                "error": str(results[name]["error"]),
+                                "results": results}
+                    emit(progress_cb, type="study_phase", phase=name,
+                         state="finished")
+                return {"success": True, "phase": "full", "results": results}
+            if phase not in phases:
+                return {"success": False,
+                        "error": f"Unknown study phase: {phase!r}"}
+            emit(progress_cb, type="study_phase", phase=phase, state="started")
+            result = phases[phase]()
+            if isinstance(result, dict) and result.get("error"):
+                return {"success": False, "phase": phase,
+                        "error": str(result["error"]), "results": result}
+            emit(progress_cb, type="study_phase", phase=phase, state="finished")
+            return {"success": True, "phase": phase, "results": result}
+        except Exception as exc:                              # noqa: BLE001
+            return {"success": False, "phase": phase, "error": str(exc)}
 
     @staticmethod
     def list_peak_presets() -> List[Dict[str, Any]]:

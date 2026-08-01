@@ -91,13 +91,13 @@ def strip_dir(tmp_path):
 class TestEngineDropdown:
 
     def test_forward_worker_accepts_engine(self):
-        from hvstrip_progressive.gui.pages.forward_modeling_page import ForwardWorker
+        from HV_Strip_Progressive.gui.pages.forward_modeling_page import ForwardWorker
         w = ForwardWorker("dummy.txt", {"fmin": 0.5}, engine_name="diffuse_field")
         assert w.engine_name == "diffuse_field"
 
     @pytest.mark.skipif(True, reason="multi_profile_dialog uses PySide6")
     def test_compute_worker_accepts_engine(self):
-        from hvstrip_progressive.gui.dialogs.multi_profile_dialog import _ComputeWorker
+        from HV_Strip_Progressive.gui.dialogs.multi_profile_dialog import _ComputeWorker
         w = _ComputeWorker(0, "dummy.txt", {}, engine_name="diffuse_field")
         assert w._engine_name == "diffuse_field"
 
@@ -110,7 +110,7 @@ class TestEngineDropdown:
 class TestDualResonanceSettingsDialog:
 
     def test_dialog_defaults(self, qapp):
-        from hvstrip_progressive.gui.dialogs.dual_resonance_settings_dialog import (
+        from HV_Strip_Progressive.gui.dialogs.dual_resonance_settings_dialog import (
             DualResonanceSettingsDialog,
         )
         dlg = DualResonanceSettingsDialog(ratio=1.5, shift=0.4)
@@ -119,7 +119,7 @@ class TestDualResonanceSettingsDialog:
         assert vals["separation_shift_threshold"] == pytest.approx(0.4)
 
     def test_dialog_default_values(self, qapp):
-        from hvstrip_progressive.gui.dialogs.dual_resonance_settings_dialog import (
+        from HV_Strip_Progressive.gui.dialogs.dual_resonance_settings_dialog import (
             DualResonanceSettingsDialog,
         )
         dlg = DualResonanceSettingsDialog()
@@ -136,7 +136,7 @@ class TestDualResonanceSettingsDialog:
 class TestBatchSettingsDialog:
 
     def test_dialog_default_config(self, qapp):
-        from hvstrip_progressive.gui.dialogs.batch_settings_dialog import (
+        from HV_Strip_Progressive.gui.dialogs.batch_settings_dialog import (
             BatchSettingsDialog,
         )
         dlg = BatchSettingsDialog()
@@ -149,7 +149,7 @@ class TestBatchSettingsDialog:
         assert "peak_detection" in cfg
 
     def test_dialog_preserves_custom_defaults(self, qapp):
-        from hvstrip_progressive.gui.dialogs.batch_settings_dialog import (
+        from HV_Strip_Progressive.gui.dialogs.batch_settings_dialog import (
             BatchSettingsDialog,
         )
         defaults = {
@@ -174,7 +174,7 @@ class TestBatchSettingsDialog:
         assert cfg["dual_resonance"]["separation_ratio_threshold"] == pytest.approx(2.0)
 
     def test_figure_defaults_present(self, qapp):
-        from hvstrip_progressive.gui.dialogs.batch_settings_dialog import (
+        from HV_Strip_Progressive.gui.dialogs.batch_settings_dialog import (
             BatchSettingsDialog,
         )
         dlg = BatchSettingsDialog()
@@ -192,7 +192,7 @@ class TestBatchSettingsDialog:
 class TestReporterDrawOnFigure:
 
     def test_draw_hv_overlay(self, strip_dir):
-        from hvstrip_progressive.core.report_generator import (
+        from HV_Strip_Progressive.core.report_generator import (
             ProgressiveStrippingReporter,
         )
         reporter = ProgressiveStrippingReporter(str(strip_dir))
@@ -202,7 +202,7 @@ class TestReporterDrawOnFigure:
         assert len(fig.axes) >= 1
 
     def test_draw_peak_evolution(self, strip_dir):
-        from hvstrip_progressive.core.report_generator import (
+        from HV_Strip_Progressive.core.report_generator import (
             ProgressiveStrippingReporter,
         )
         reporter = ProgressiveStrippingReporter(str(strip_dir))
@@ -212,7 +212,7 @@ class TestReporterDrawOnFigure:
         assert len(fig.axes) == 3
 
     def test_draw_interface_analysis(self, strip_dir):
-        from hvstrip_progressive.core.report_generator import (
+        from HV_Strip_Progressive.core.report_generator import (
             ProgressiveStrippingReporter,
         )
         reporter = ProgressiveStrippingReporter(str(strip_dir))
@@ -222,7 +222,7 @@ class TestReporterDrawOnFigure:
         assert len(fig.axes) == 2
 
     def test_draw_waterfall(self, strip_dir):
-        from hvstrip_progressive.core.report_generator import (
+        from HV_Strip_Progressive.core.report_generator import (
             ProgressiveStrippingReporter,
         )
         reporter = ProgressiveStrippingReporter(str(strip_dir))
@@ -231,7 +231,7 @@ class TestReporterDrawOnFigure:
         assert ok is True
 
     def test_draw_publication(self, strip_dir):
-        from hvstrip_progressive.core.report_generator import (
+        from HV_Strip_Progressive.core.report_generator import (
             ProgressiveStrippingReporter,
         )
         reporter = ProgressiveStrippingReporter(str(strip_dir))
@@ -241,7 +241,7 @@ class TestReporterDrawOnFigure:
         assert len(fig.axes) >= 4
 
     def test_draw_overlay_kwargs(self, strip_dir):
-        from hvstrip_progressive.core.report_generator import (
+        from HV_Strip_Progressive.core.report_generator import (
             ProgressiveStrippingReporter,
         )
         reporter = ProgressiveStrippingReporter(str(strip_dir))
@@ -262,7 +262,7 @@ class TestReporterDrawOnFigure:
 class TestFigureWizardDialog:
 
     def test_wizard_creates(self, qapp, strip_dir, tmp_path):
-        from hvstrip_progressive.gui.dialogs.figure_wizard_dialog import (
+        from HV_Strip_Progressive.gui.dialogs.figure_wizard_dialog import (
             FigureWizardDialog,
         )
         output = tmp_path / "wizard_out"
@@ -276,7 +276,7 @@ class TestFigureWizardDialog:
         assert wizard._reporter is not None
 
     def test_wizard_with_dr(self, qapp, strip_dir, tmp_path):
-        from hvstrip_progressive.gui.dialogs.figure_wizard_dialog import (
+        from HV_Strip_Progressive.gui.dialogs.figure_wizard_dialog import (
             FigureWizardDialog,
         )
         output = tmp_path / "wizard_out2"
@@ -290,7 +290,7 @@ class TestFigureWizardDialog:
         assert wizard.fig_list.count() == 6
 
     def test_wizard_draws_without_error(self, qapp, strip_dir, tmp_path):
-        from hvstrip_progressive.gui.dialogs.figure_wizard_dialog import (
+        from HV_Strip_Progressive.gui.dialogs.figure_wizard_dialog import (
             FigureWizardDialog,
         )
         output = tmp_path / "wizard_out3"
@@ -305,7 +305,7 @@ class TestFigureWizardDialog:
             # Should not raise
 
     def test_wizard_has_stacked_panels(self, qapp, strip_dir, tmp_path):
-        from hvstrip_progressive.gui.dialogs.figure_wizard_dialog import (
+        from HV_Strip_Progressive.gui.dialogs.figure_wizard_dialog import (
             FigureWizardDialog,
         )
         output = tmp_path / "wizard_stack"
@@ -322,7 +322,7 @@ class TestFigureWizardDialog:
                 assert isinstance(kw, dict)
 
     def test_wizard_panel_switching(self, qapp, strip_dir, tmp_path):
-        from hvstrip_progressive.gui.dialogs.figure_wizard_dialog import (
+        from HV_Strip_Progressive.gui.dialogs.figure_wizard_dialog import (
             FigureWizardDialog,
         )
         output = tmp_path / "wizard_switch"
@@ -343,32 +343,32 @@ class TestFigureWizardDialog:
 class TestHalfspaceDisplayDepth:
 
     def test_proportional_40m(self):
-        from hvstrip_progressive.core.soil_profile import compute_halfspace_display_depth
+        from HV_Strip_Progressive.core.soil_profile import compute_halfspace_display_depth
         result = compute_halfspace_display_depth(40.0)
         assert result == pytest.approx(10.0)  # 40 * 0.25
 
     def test_min_extension(self):
-        from hvstrip_progressive.core.soil_profile import compute_halfspace_display_depth
+        from HV_Strip_Progressive.core.soil_profile import compute_halfspace_display_depth
         result = compute_halfspace_display_depth(10.0)
         assert result == pytest.approx(5.0)  # min_extension kicks in (10*0.25=2.5 < 5)
 
     def test_max_cap(self):
-        from hvstrip_progressive.core.soil_profile import compute_halfspace_display_depth
+        from HV_Strip_Progressive.core.soil_profile import compute_halfspace_display_depth
         result = compute_halfspace_display_depth(200.0)
         assert result == pytest.approx(50.0)  # 200*0.25=50, cap=200*0.5=100 → 50
 
     def test_custom_ratio(self):
-        from hvstrip_progressive.core.soil_profile import compute_halfspace_display_depth
+        from HV_Strip_Progressive.core.soil_profile import compute_halfspace_display_depth
         result = compute_halfspace_display_depth(40.0, hs_ratio=0.5)
         assert result == pytest.approx(20.0)  # 40 * 0.5, cap=20
 
     def test_custom_max_extension(self):
-        from hvstrip_progressive.core.soil_profile import compute_halfspace_display_depth
+        from HV_Strip_Progressive.core.soil_profile import compute_halfspace_display_depth
         result = compute_halfspace_display_depth(100.0, max_extension=15.0)
         assert result == pytest.approx(15.0)  # capped
 
     def test_zero_depth(self):
-        from hvstrip_progressive.core.soil_profile import compute_halfspace_display_depth
+        from HV_Strip_Progressive.core.soil_profile import compute_halfspace_display_depth
         result = compute_halfspace_display_depth(0.0)
         assert result >= 20.0  # fallback
 
@@ -380,7 +380,7 @@ class TestHalfspaceDisplayDepth:
 class TestVsAverage:
 
     def test_vs30_simple_layers(self):
-        from hvstrip_progressive.core.vs_average import compute_vs_average
+        from HV_Strip_Progressive.core.vs_average import compute_vs_average
         layers = [(10.0, 200.0), (20.0, 400.0), (0.0, 800.0)]
         res = compute_vs_average(layers, target_depth=30.0)
         assert res.vs_avg > 0
@@ -389,7 +389,7 @@ class TestVsAverage:
         assert res.extrapolated is False
 
     def test_vs30_needs_halfspace(self):
-        from hvstrip_progressive.core.vs_average import compute_vs_average
+        from HV_Strip_Progressive.core.vs_average import compute_vs_average
         layers = [(10.0, 200.0), (0.0, 400.0)]
         res = compute_vs_average(layers, target_depth=30.0)
         assert res.vs_avg > 0
@@ -397,7 +397,7 @@ class TestVsAverage:
         assert len(res.layer_contributions) == 2
 
     def test_vs30_no_halfspace_short(self):
-        from hvstrip_progressive.core.vs_average import compute_vs_average
+        from HV_Strip_Progressive.core.vs_average import compute_vs_average
         layers = [(10.0, 200.0)]
         res = compute_vs_average(layers, target_depth=30.0, use_halfspace=False)
         # Only 10m of 30m available
@@ -405,14 +405,14 @@ class TestVsAverage:
         assert res.extrapolated is False
 
     def test_vs_weighted(self):
-        from hvstrip_progressive.core.vs_average import compute_vs_weighted
+        from HV_Strip_Progressive.core.vs_average import compute_vs_weighted
         layers = [(10.0, 200.0), (20.0, 400.0), (0.0, 800.0)]
         result = compute_vs_weighted(layers)
         expected = (10 * 200 + 20 * 400) / 30.0
         assert result == pytest.approx(expected, rel=0.01)
 
     def test_from_model_file(self, tmp_path):
-        from hvstrip_progressive.core.vs_average import vs_average_from_model_file
+        from HV_Strip_Progressive.core.vs_average import vs_average_from_model_file
         model = tmp_path / "model.txt"
         model.write_text(
             "3\n10.0  400.0  200.0  1.8\n20.0  800.0  400.0  2.0\n0.0  1600.0  800.0  2.2\n"
@@ -422,8 +422,8 @@ class TestVsAverage:
         assert res.actual_depth == 30.0
 
     def test_from_profile(self):
-        from hvstrip_progressive.core.soil_profile import SoilProfile, Layer
-        from hvstrip_progressive.core.vs_average import vs_average_from_profile
+        from HV_Strip_Progressive.core.soil_profile import SoilProfile, Layer
+        from HV_Strip_Progressive.core.vs_average import vs_average_from_profile
         p = SoilProfile()
         p.add_layer(Layer(thickness=15.0, vs=200.0))
         p.add_layer(Layer(thickness=15.0, vs=400.0))
@@ -433,7 +433,7 @@ class TestVsAverage:
         assert res.extrapolated is False
 
     def test_custom_depth(self):
-        from hvstrip_progressive.core.vs_average import compute_vs_average
+        from HV_Strip_Progressive.core.vs_average import compute_vs_average
         layers = [(5.0, 150.0), (5.0, 300.0), (0.0, 600.0)]
         res = compute_vs_average(layers, target_depth=10.0)
         expected = 10.0 / (5.0 / 150.0 + 5.0 / 300.0)
@@ -449,14 +449,14 @@ class TestVsAverage:
 class TestFigureSettingsPanels:
 
     def test_all_panels_instantiate(self, qapp):
-        from hvstrip_progressive.gui.dialogs.figure_settings_panels import PANEL_REGISTRY
+        from HV_Strip_Progressive.gui.dialogs.figure_settings_panels import PANEL_REGISTRY
         for key, cls in PANEL_REGISTRY.items():
             panel = cls()
             kw = panel.get_kwargs()
             assert isinstance(kw, dict), f"{key} panel get_kwargs failed"
 
     def test_hv_overlay_defaults(self, qapp):
-        from hvstrip_progressive.gui.dialogs.figure_settings_panels import HVOverlaySettingsPanel
+        from HV_Strip_Progressive.gui.dialogs.figure_settings_panels import HVOverlaySettingsPanel
         p = HVOverlaySettingsPanel()
         kw = p.get_kwargs()
         assert kw["log_x"] is True
@@ -466,14 +466,14 @@ class TestFigureSettingsPanels:
         assert "linewidth" in kw
 
     def test_waterfall_defaults(self, qapp):
-        from hvstrip_progressive.gui.dialogs.figure_settings_panels import WaterfallSettingsPanel
+        from HV_Strip_Progressive.gui.dialogs.figure_settings_panels import WaterfallSettingsPanel
         p = WaterfallSettingsPanel()
         kw = p.get_kwargs()
         assert "offset_factor" in kw
         assert kw["normalize"] is False
 
     def test_dual_resonance_annotation_offsets(self, qapp):
-        from hvstrip_progressive.gui.dialogs.figure_settings_panels import DualResonanceSettingsPanel
+        from HV_Strip_Progressive.gui.dialogs.figure_settings_panels import DualResonanceSettingsPanel
         p = DualResonanceSettingsPanel()
         kw = p.get_kwargs()
         assert kw["f0_offset"] == (0.0, 0.0)
@@ -482,7 +482,7 @@ class TestFigureSettingsPanels:
         assert "hs_ratio" in kw
 
     def test_publication_table_font(self, qapp):
-        from hvstrip_progressive.gui.dialogs.figure_settings_panels import PublicationSettingsPanel
+        from HV_Strip_Progressive.gui.dialogs.figure_settings_panels import PublicationSettingsPanel
         p = PublicationSettingsPanel()
         kw = p.get_kwargs()
         assert "table_font" in kw
@@ -495,28 +495,28 @@ class TestFigureSettingsPanels:
 class TestExtendedDrawKwargs:
 
     def test_overlay_show_peaks_false(self, strip_dir):
-        from hvstrip_progressive.core.report_generator import ProgressiveStrippingReporter
+        from HV_Strip_Progressive.core.report_generator import ProgressiveStrippingReporter
         reporter = ProgressiveStrippingReporter(str(strip_dir))
         fig = Figure()
         ok = reporter.draw_hv_overlay_on_figure(fig, show_peaks=False, marker_size=12)
         assert ok is True
 
     def test_peak_evolution_no_fill(self, strip_dir):
-        from hvstrip_progressive.core.report_generator import ProgressiveStrippingReporter
+        from HV_Strip_Progressive.core.report_generator import ProgressiveStrippingReporter
         reporter = ProgressiveStrippingReporter(str(strip_dir))
         fig = Figure()
         ok = reporter.draw_peak_evolution_on_figure(fig, show_fill=False, marker_size=10)
         assert ok is True
 
     def test_interface_annot_font(self, strip_dir):
-        from hvstrip_progressive.core.report_generator import ProgressiveStrippingReporter
+        from HV_Strip_Progressive.core.report_generator import ProgressiveStrippingReporter
         reporter = ProgressiveStrippingReporter(str(strip_dir))
         fig = Figure()
         ok = reporter.draw_interface_analysis_on_figure(fig, annot_font=8, marker_size=6)
         assert ok is True
 
     def test_publication_table_font(self, strip_dir):
-        from hvstrip_progressive.core.report_generator import ProgressiveStrippingReporter
+        from HV_Strip_Progressive.core.report_generator import ProgressiveStrippingReporter
         reporter = ProgressiveStrippingReporter(str(strip_dir))
         fig = Figure()
         ok = reporter.draw_publication_on_figure(fig, table_font=7)

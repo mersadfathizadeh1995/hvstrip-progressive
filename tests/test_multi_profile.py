@@ -54,7 +54,7 @@ class TestExcelParser:
     """Test SoilProfile.from_excel_file with real data."""
 
     def test_parse_all_profiles(self):
-        from hvstrip_progressive.core.soil_profile import SoilProfile
+        from HV_Strip_Progressive.core.soil_profile import SoilProfile
 
         xlsx_files = sorted(PROFILES_DIR.glob("*.xlsx"))
         assert len(xlsx_files) == 10, f"Expected 10 xlsx files, got {len(xlsx_files)}"
@@ -67,7 +67,7 @@ class TestExcelParser:
                 assert layer.vs > 0, f"{f.name}: Vs must be > 0"
 
     def test_halfspace_detection(self):
-        from hvstrip_progressive.core.soil_profile import SoilProfile
+        from HV_Strip_Progressive.core.soil_profile import SoilProfile
 
         profile = SoilProfile.from_excel_file(str(PROFILES_DIR / "Profile_1.xlsx"))
         hs = profile.layers[-1]
@@ -81,8 +81,8 @@ class TestHVComputation:
 
     def test_compute_single_profile(self):
         import tempfile
-        from hvstrip_progressive.core.soil_profile import SoilProfile
-        from hvstrip_progressive.core.hv_forward import compute_hv_curve
+        from HV_Strip_Progressive.core.soil_profile import SoilProfile
+        from HV_Strip_Progressive.core.hv_forward import compute_hv_curve
 
         profile = SoilProfile.from_excel_file(str(PROFILES_DIR / "Profile_1.xlsx"))
 
@@ -112,8 +112,8 @@ class TestHVComputation:
     def test_compute_all_profiles(self):
         """Run all 10 profiles and verify each produces valid HV curves."""
         import tempfile
-        from hvstrip_progressive.core.soil_profile import SoilProfile
-        from hvstrip_progressive.core.hv_forward import compute_hv_curve
+        from HV_Strip_Progressive.core.soil_profile import SoilProfile
+        from HV_Strip_Progressive.core.hv_forward import compute_hv_curve
 
         config = {"fmin": 0.1, "fmax": 10.0, "nf": 500}
         xlsx_files = sorted(PROFILES_DIR.glob("*.xlsx"))
@@ -143,8 +143,8 @@ class TestMultiProfileDialog:
     """Test the MultiProfilePickerDialog in headless mode."""
 
     def test_dialog_creates(self, qapp):
-        from hvstrip_progressive.core.soil_profile import SoilProfile
-        from hvstrip_progressive.gui.dialogs.multi_profile_dialog import (
+        from HV_Strip_Progressive.core.soil_profile import SoilProfile
+        from HV_Strip_Progressive.gui.dialogs.multi_profile_dialog import (
             MultiProfilePickerDialog, FigureSettings,
         )
 
@@ -188,8 +188,8 @@ class TestMultiProfileDialog:
 
     def test_median_step(self, qapp):
         """Test the median step: navigate to it, pick peaks, verify results."""
-        from hvstrip_progressive.core.soil_profile import SoilProfile
-        from hvstrip_progressive.gui.dialogs.multi_profile_dialog import (
+        from HV_Strip_Progressive.core.soil_profile import SoilProfile
+        from HV_Strip_Progressive.gui.dialogs.multi_profile_dialog import (
             MultiProfilePickerDialog, FigureSettings,
         )
 
@@ -273,11 +273,11 @@ class TestMultiProfileDialog:
 
     def test_full_workflow_with_save(self, qapp):
         """Full end-to-end: load all 10, auto-detect + median step, save."""
-        from hvstrip_progressive.core.soil_profile import SoilProfile
-        from hvstrip_progressive.gui.dialogs.multi_profile_dialog import (
+        from HV_Strip_Progressive.core.soil_profile import SoilProfile
+        from HV_Strip_Progressive.gui.dialogs.multi_profile_dialog import (
             MultiProfilePickerDialog, FigureSettings,
         )
-        from hvstrip_progressive.gui.pages.forward_modeling_page import ForwardModelingPage
+        from HV_Strip_Progressive.gui.pages.forward_modeling_page import ForwardModelingPage
 
         xlsx_files = sorted(PROFILES_DIR.glob("*.xlsx"))
         profiles = []
@@ -321,7 +321,7 @@ class TestMultiProfileDialog:
         print(f"  Median f0: {median_result.f0[0]:.3f} Hz")
 
         # Use the save method from MultiProfileTab
-        from hvstrip_progressive.gui.pages.multi_profile_tab import MultiProfileTab
+        from HV_Strip_Progressive.gui.pages.multi_profile_tab import MultiProfileTab
         tab = MultiProfileTab(
             get_freq_config=lambda: {"fmin": 0.2, "fmax": 20.0, "nf": 500},
             get_output_dir=lambda: str(OUTPUT_DIR),
@@ -364,14 +364,14 @@ class TestMultiProfileDialog:
 
     def test_load_output_folder(self, qapp):
         """Load an existing output folder and verify profiles + median are parsed."""
-        from hvstrip_progressive.gui.dialogs.output_viewer_dialog import (
+        from HV_Strip_Progressive.gui.dialogs.output_viewer_dialog import (
             load_output_folder, OutputViewerDialog,
         )
-        from hvstrip_progressive.gui.dialogs.multi_profile_dialog import FigureSettings
+        from HV_Strip_Progressive.gui.dialogs.multi_profile_dialog import FigureSettings
 
         output_dir = Path(
             r"D:\Research\Narm_Afzar\hvstrip-progressive"
-            r"\hvstrip_progressive\Example\profiles_Input\output8"
+            r"\HV_Strip_Progressive\Example\profiles_Input\output8"
         )
         if not output_dir.exists():
             pytest.skip(f"Output folder not found: {output_dir}")

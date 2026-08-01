@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from hvstrip_progressive.core.dual_resonance import (
+from HV_Strip_Progressive.core.dual_resonance import (
     BatchDualResonanceStats,
     DualResonanceResult,
     compute_batch_statistics,

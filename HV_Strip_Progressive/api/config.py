@@ -147,8 +147,13 @@ class FrequencyConfig:
     """Maximum frequency [Hz]."""
     nf: int = 71
     """Number of frequency points (used by DiffuseField)."""
-    n_samples: int = 500
-    """Number of frequency samples (used by Ellipticity / SHWave)."""
+    n_samples: int = 512
+    """Number of frequency samples (used by Ellipticity / SHWave).
+
+    512 matches core's ``SHTFConfig`` default AND the legacy GUI — the api
+    previously said 500, which silently shifted the frequency grid (and the
+    detected peak) whenever the api path was used.  Aligned 2026-07-09.
+    """
     sampling: str = "log"
     """Frequency spacing: ``"log"`` | ``"linear"`` | ``"period"``."""
 
@@ -478,17 +483,129 @@ class HVStripConfig:
     # -- Serialisation helpers ------------------------------------------------
 
     def to_dict(self) -> Dict[str, Any]:
-        """Recursively convert to a plain dict (JSON-safe)."""
-        return asdict(self)
+        """Recursively convert to a plain dict (JSON-safe).
+
+        Carries ``config_version`` so loaders can distinguish dataclass
+        payloads (v2) from the retired legacy GUI dict shape.
+        """
+        d = asdict(self)
+        d["config_version"] = CONFIG_VERSION
+        return d
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "HVStripConfig":
         """Construct from a (possibly partial) dict.
 
-        Missing keys keep their defaults.
+        Missing keys keep their defaults.  Accepts BOTH shapes: a v2
+        dataclass payload (``config_version: 2``) is applied directly; any
+        other dict is treated as the legacy GUI shape and routed through
+        :meth:`from_legacy_gui_dict` (best-effort).
         """
+        if not isinstance(d, dict):
+            return cls()
+        if d.get("config_version", 0) >= CONFIG_VERSION or _looks_v2(d):
+            cfg = cls()
+            _apply_dict(cfg, {k: v for k, v in d.items()
+                              if k != "config_version"})
+            return cfg
+        return cls.from_legacy_gui_dict(d)
+
+    @classmethod
+    def from_legacy_gui_dict(cls, d: Dict[str, Any]) -> "HVStripConfig":
+        """Best-effort migration of the RETIRED legacy GUI nested dict
+        (``gui/strip_window._get_default_config`` shape; fixture:
+        ``tests/golden/legacy_gui_config.json``) onto the dataclasses.
+
+        Legacy values win over defaults.  Unknown leaves are logged (never
+        silently dropped) via the module logger.
+        """
+        import logging
+
+        log = logging.getLogger(__name__)
         cfg = cls()
-        _apply_dict(cfg, d)
+        if not isinstance(d, dict):
+            return cfg
+        unmapped: list = []
+
+        # -- engine selection + per-engine settings (fields are disjoint) --
+        name = (
+            (d.get("engine") or {}).get("name")
+            or d.get("engine_name")
+            or cfg.engine.name
+        )
+        cfg.engine.name = str(name)
+        freq_sources: Dict[str, Any] = {}
+        for eng_name, eng_cfg in (d.get("engine_settings") or {}).items():
+            if not isinstance(eng_cfg, dict):
+                continue
+            for key, value in eng_cfg.items():
+                if key in ("fmin", "fmax", "nf", "n_samples"):
+                    if eng_name == cfg.engine.name:
+                        freq_sources[key] = value
+                elif key == "sampling":
+                    # `sampling` is both an engine field and a frequency
+                    # field; keep the engine's own value.
+                    if eng_name == cfg.engine.name:
+                        cfg.engine.sampling = value
+                        cfg.frequency.sampling = value
+                elif hasattr(cfg.engine, key):
+                    setattr(cfg.engine, key, value)
+                else:
+                    unmapped.append(f"engine_settings.{eng_name}.{key}")
+
+        # -- the active-engine core config (hv_forward) -----------------
+        hv_fwd = dict(d.get("hv_forward") or {})
+        adaptive = hv_fwd.pop("adaptive", None)
+        if isinstance(adaptive, dict):
+            _apply_dict(cfg.adaptive, adaptive)
+        for key, value in hv_fwd.items():
+            if key in ("fmin", "fmax", "nf", "n_samples"):
+                freq_sources.setdefault(key, value)
+            elif hasattr(cfg.engine, key):
+                setattr(cfg.engine, key, value)
+            else:
+                unmapped.append(f"hv_forward.{key}")
+        for key, value in freq_sources.items():
+            setattr(cfg.frequency, key, value)
+
+        # -- post-processing (renames: output → output_files) -----------
+        post = dict(d.get("hv_postprocess") or {})
+        out_files = post.pop("output", None)
+        if isinstance(out_files, dict):
+            _apply_dict(cfg.postprocess.output_files, out_files)
+        _apply_dict(cfg.postprocess, post)
+
+        # -- peak detection (top level mirrors into postprocess too) ----
+        peaks = d.get("peak_detection") or {}
+        if isinstance(peaks, dict):
+            _apply_dict(cfg.peak_detection, peaks)
+            _apply_dict(cfg.postprocess.peak_detection, peaks)
+
+        # -- dual resonance (rename: enable → enabled) -------------------
+        dual = dict(d.get("dual_resonance") or {})
+        if "enable" in dual:
+            cfg.dual_resonance.enabled = bool(dual.pop("enable"))
+        _apply_dict(cfg.dual_resonance, dual)
+
+        # -- workflow flags ----------------------------------------------
+        if "generate_report" in d:
+            cfg.strip.generate_report = bool(d["generate_report"])
+        if "interactive_mode" in d:
+            cfg.strip.interactive_mode = bool(d["interactive_mode"])
+
+        # -- global plot hints (best-effort onto the HV plot) ------------
+        plot = d.get("plot") or {}
+        if isinstance(plot, dict):
+            _apply_dict(cfg.postprocess.hv_plot, plot)
+
+        handled = {
+            "engine", "engine_name", "engine_settings", "hv_forward",
+            "hv_postprocess", "peak_detection", "dual_resonance",
+            "generate_report", "interactive_mode", "plot", "config_version",
+        }
+        unmapped.extend(k for k in d.keys() if k not in handled)
+        if unmapped:
+            log.info("Legacy config migration: unmapped keys %s", unmapped)
         return cfg
 
     def to_json(self, indent: int = 2) -> str:
@@ -549,6 +666,20 @@ class HVStripConfig:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+#: Serialised-config schema version.  v2 = the dataclass payload
+#: (``HVStripConfig.to_dict()``); anything without the key is the legacy GUI
+#: dict and goes through ``from_legacy_gui_dict``.
+CONFIG_VERSION = 2
+
+#: Top-level keys unique to the v2 dataclass payload (recognition heuristic
+#: for payloads saved by ``to_dict()`` before the version key existed).
+_V2_MARKER_KEYS = {"frequency", "auto_peak", "postprocess", "adaptive"}
+
+
+def _looks_v2(d: Dict[str, Any]) -> bool:
+    return bool(_V2_MARKER_KEYS & set(d.keys()))
+
 
 def _apply_dict(obj: Any, d: Dict[str, Any]) -> None:
     """Recursively apply *d* onto dataclass *obj*, keeping defaults for

@@ -5,7 +5,7 @@ Tests for velocity_utils module.
 import math
 import pytest
 
-from hvstrip_progressive.core.velocity_utils import VelocityConverter
+from HV_Strip_Progressive.core.velocity_utils import VelocityConverter
 
 
 class TestVelocityConverter:
