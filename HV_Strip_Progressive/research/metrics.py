@@ -84,6 +84,7 @@ class ComparisonMetrics:
 def compute_metrics(
     dataset: ComparisonDataset,
     config: MetricsConfig,
+    _with_categories: bool = True,
 ) -> ComparisonMetrics:
     """Compute all comparison metrics for the dataset.
 
@@ -91,6 +92,9 @@ def compute_metrics(
     ----------
     dataset : ComparisonDataset
     config : MetricsConfig
+    _with_categories : bool
+        Internal — the per-category recursion passes ``False`` so a
+        subset never re-enters the breakdown loop.
 
     Returns
     -------
@@ -115,19 +119,20 @@ def compute_metrics(
             ca = _compute_curve_agreement(dataset, eng_a, eng_b, config)
             metrics.curve_agreements.append(ca)
 
-    # Per-category breakdown.  Only when there is more than one category:
-    # each single-category subset would otherwise re-enter this loop with
-    # itself forever (this recursed unconditionally and could never finish
-    # on a non-empty dataset).
+    # Per-category breakdown.  The recursion is capped by the flag (a subset
+    # never re-enters this loop — the old unconditional recursion could never
+    # finish), NOT by the category count: a single-category dataset still
+    # gets its one per_category entry.
     categories = set(c.category for c in dataset.comparisons)
-    if len(categories) > 1:
+    if _with_categories and categories:
         for category in categories:
             subset = ComparisonDataset(
                 comparisons=[c for c in dataset.comparisons
                              if c.category == category],
                 engine_names=dataset.engine_names,
             )
-            metrics.per_category[category] = compute_metrics(subset, config)
+            metrics.per_category[category] = compute_metrics(
+                subset, config, _with_categories=False)
 
     return metrics
 

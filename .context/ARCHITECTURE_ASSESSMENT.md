@@ -163,9 +163,47 @@ Track 2) · the right rail becomes the figure-properties context (Track 2).
     (follows ProfilesPanel focus) + the ported **LayerTable** (9 cols, Vp Mode Auto/Nu/Manual
     live re-derive, Auto-fill — all values from `suggest_layer_fill`; Apply →
     `update_profile` + badge reset; New-profile-from-table = the manual-editor path).
-- **Track 2 (NEXT)**: per-stage top Run strips + checked-set dispatch (the Single/Multiple/Batch
-  merge) · port the legacy interactive mpl HV figure (f0/secondary PICKING) for Forward/Strip ·
-  right rail → figure properties · Research re-skin.
+- **Review fixes (DONE 2026-08-15)** — the HV_Pro code-review findings repaired (suites:
+  tests_v2 **65** · legacy 150/24 · goldens bit-identical):
+  - `OpWorker.run` now catches every raise + non-dict return and synthesizes a
+    `{success: False, error, traceback}` envelope — a raising op (e.g. `_resolve_profile`
+    KeyError) used to wedge the OpQueue busy until app restart. The invert-inherited
+    "nothing is caught here" contract does NOT hold for this api.
+  - Stale cached profile names: `ForwardSinglePanel`/`StripModelPanel` drop a removed
+    profile's name on refresh (Run gating was staying enabled → the wedge trigger);
+    `AppState._resolve_op_profile` resolves `None` → first profile BEFORE submit.
+  - `LayerTable` cell-widget handlers resolve their row at FIRE time (`_widget_row`) —
+    creation-time captures went stale after `removeRow` and silently edited the wrong
+    layer; `_swap_rows` now moves the Vp-mode with its layer; `_on_hs_changed`
+    save/restores `_block` instead of clobbering it.
+  - `HVStripConfig.from_dict` routing: legacy-only keys (`engine_settings`, `hv_forward`, …)
+    → the legacy migrator; otherwise top-level-⊆-v2-fields (incl. PARTIAL dicts and the
+    overlap keys `engine`/`dual_resonance`/`peak_detection`) applies as v2; `_apply_dict`
+    collects unmapped keys for logging (the "never silently dropped" contract, both routes).
+  - **Settings files split**: the legacy window now owns `~/.hvstrip/settings_legacy.yaml`
+    (one-time seed from a legacy-shaped `settings.yaml`; v2 payloads never merged) —
+    `settings.yaml` belongs to gui/v2 alone. The shared-file deep-merge used to clobber
+    both sides' edits.
+  - The stdout tee (`api/_progress.py`) parses only its installing thread's lines and is
+    single-flight (a second concurrent install degrades to no-parse) — the "ONE OpQueue"
+    safety assumption died when the research queue landed.
+  - `research/metrics.compute_metrics` caps the per-category recursion with a flag, not the
+    category COUNT — a single-category study gets its one `per_category` entry again.
+  - `ComparisonPage` heals the "(unavailable)" engine label/check when the engine becomes
+    available (only OUR forced un-checks are restored, not the user's).
+  - The mpl Vs preview + both pyqtgraph canvases share ONE staircase builder
+    (`canvas/constants.layers_to_staircase`, proportional halfspace `max(0.25·depth, 1 m)`
+    — the legacy-preview rule); the duplicated copies had drifted (25 % vs fixed 50 m).
+  - `os.startfile` → `QDesktopServices.openUrl` (platform-safe).
+  - Regression pins: `tests_v2/test_api/test_review_fixes_api.py` +
+    `tests_v2/test_gui/test_review_fixes_gui.py` (+ the single-category contract updated in
+    `test_research_study.py`).
+- **Track 2 (NEXT — spec `specs/002-gui-round2-track2/`)**: per-stage top Run strips +
+  checked-set dispatch (the Single/Multiple/Batch merge) · port the legacy interactive mpl HV
+  figure (f0/secondary PICKING) for Forward/Strip · right rail → figure properties · Research
+  re-skin — plus the 2026-08-15 v2 audit's hardening backlog (refresh storm, first-click busy
+  UX, AppState privates → api accessors, dead `tables.py` adoption, persistence gaps,
+  cancel/progress, O1 blank Vs pane, inert peak-markers node).
 - **Track 3**: Figure Studio / report overhaul. Then the deferred P6 cutover + Hub provider.
 
 ## 3. Performance invariants — DO NOT regress (user constraint)

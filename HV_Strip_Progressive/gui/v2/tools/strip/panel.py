@@ -59,6 +59,8 @@ from HV_Strip_Progressive.gui.v2.widgets.house.sub_breadcrumb import (
 class StripModelPanel(PhasePanel):
     """Profile in, output folder out."""
 
+    sections = ("output",)
+
     def build(self) -> None:
         self._loading = False
         body = self.scroll_host()
@@ -100,6 +102,9 @@ class StripModelPanel(PhasePanel):
         self._loading = True
         try:
             profiles = self.app_state.profiles()
+            names = {p["name"] for p in profiles}
+            if self.profile_name not in names:
+                self.profile_name = None       # removed/renamed → drop it
             if self.profile_name is None and profiles:
                 self.profile_name = profiles[-1]["name"]
             info = next((p for p in profiles
@@ -107,6 +112,8 @@ class StripModelPanel(PhasePanel):
             if info:
                 self._file_lbl.setText(
                     f"{info['name']} · {info['n_layers']} layers")
+            else:
+                self._file_lbl.setText("No profile loaded.")
             cfg = self.app_state.config
             if cfg and not self._out_edit.hasFocus():
                 self._out_edit.setText(cfg.output.output_dir or "")
@@ -139,6 +146,9 @@ class StripModelPanel(PhasePanel):
 # ======================================================================
 class StripRunPanel(PhasePanel):
     """Strip options + the live run."""
+
+    sections = _ConfigCards.SECTIONS + (
+        "strip", "adaptive", "dual_resonance", "output")
 
     def __init__(self, app_state, model_panel: StripModelPanel, parent=None):
         self._model_panel = model_panel
@@ -239,6 +249,8 @@ class StripRunPanel(PhasePanel):
 class StripReviewPanel(PhasePanel):
     """Per-step readout + dual resonance + report shortcuts."""
 
+    sections = ()          # results-driven; config changes are irrelevant
+
     def build(self) -> None:
         body = self.scroll_host()
         head = QLabel("3 · Review")
@@ -298,10 +310,13 @@ class StripReviewPanel(PhasePanel):
     def _on_open_folder(self) -> None:
         import os
 
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
         result = next(iter(self.app_state.strip_results().values()), None)
         out = getattr(result, "output_directory", "")
         if out and os.path.isdir(out):
-            os.startfile(out)  # noqa: S606 — user-requested open
+            QDesktopServices.openUrl(QUrl.fromLocalFile(out))
 
 
 # ======================================================================
@@ -309,6 +324,8 @@ class StripReviewPanel(PhasePanel):
 # ======================================================================
 class StripBatchPanel(PhasePanel):
     """Many profiles → the Progress-dock table."""
+
+    sections = ("output", "batch")
 
     def build(self) -> None:
         self._loading = False
@@ -336,6 +353,9 @@ class StripBatchPanel(PhasePanel):
         orow = QHBoxLayout()
         self._out_edit = QLineEdit()
         self._out_edit.setPlaceholderText("Batch output folder…")
+        # Persisted through the config funnel (spec 002 FR-14) — this was
+        # widget-local state that reset every launch.
+        self._out_edit.editingFinished.connect(self._on_out)
         out_btn = QPushButton("Browse…")
         out_btn.clicked.connect(self._on_browse_out)
         orow.addWidget(self._out_edit, 1)
@@ -361,6 +381,9 @@ class StripBatchPanel(PhasePanel):
             profiles = self.app_state.profiles()
             for p in profiles:
                 self._list.addItem(f"{p['name']}  ·  {p['n_layers']} layers")
+            cfg = self.app_state.config
+            if cfg is not None and not self._out_edit.hasFocus():
+                self._out_edit.setText(cfg.batch.output.output_dir or "")
             self._run_btn.setEnabled(
                 bool(profiles) and not self.app_state.is_busy)
         finally:
@@ -377,6 +400,13 @@ class StripBatchPanel(PhasePanel):
         folder = QFileDialog.getExistingDirectory(self, "Batch output folder")
         if folder:
             self._out_edit.setText(folder)
+            self._on_out()
+
+    def _on_out(self) -> None:
+        if self._loading:
+            return
+        self.app_state.update_config(
+            "batch", output={"output_dir": self._out_edit.text().strip()})
 
     def _on_run(self) -> None:
         out = self._out_edit.text().strip() or None
@@ -431,7 +461,8 @@ class StripToolPanel(QWidget):
         self._sub_bar.tab_clicked.connect(self._set_index)
         app_state.profiles_changed.connect(self._update_gating)
         app_state.strip_changed.connect(self._update_gating)
-        app_state.config_changed.connect(lambda _s: self._update_gating())
+        app_state.config_changed.connect(
+            lambda s: self._update_gating() if s in ("output", "*") else None)
         self._set_index(0)
         self._update_gating()
 

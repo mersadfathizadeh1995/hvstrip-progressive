@@ -104,6 +104,11 @@ class StripMainWindow(QMainWindow):
         self.app_state.op_progress.connect(self._on_op_progress)
         self.app_state.op_finished.connect(self._on_op_finished)
         self.app_state.error.connect(self._on_error)
+        self.app_state.busy_hint.connect(self._on_busy_hint)
+        # Engine badges follow engine-config changes live (spec 002 FR-12).
+        self.app_state.config_changed.connect(
+            lambda s: self._refresh_engine_badges()
+            if s in ("engine", "*") else None)
 
         self._panels: Dict[StripTool, QWidget] = {}
         self._canvases: Dict[StripTool, QWidget] = {}
@@ -128,6 +133,7 @@ class StripMainWindow(QMainWindow):
                 "output", output_dir=str(self._init_output_dir))
 
         self._activate_tool(StripTool.DATA)
+        self._restore_window_state()
         self._refresh_title()
         self._refresh_engine_badges()
 
@@ -293,7 +299,9 @@ class StripMainWindow(QMainWindow):
         file_menu.addAction(settings_act)
         save_act = QAction("Save se&ttings", self)
         save_act.setShortcut(QKeySequence.Save)
-        save_act.triggered.connect(self.app_state.save_settings)
+        # Qt passes `checked: bool` into a triggered slot — never bind a
+        # method with meaningful defaults directly (spec 002 audit O19).
+        save_act.triggered.connect(lambda: self.app_state.save_settings())
         file_menu.addAction(save_act)
         file_menu.addSeparator()
         quit_act = QAction("&Quit", self)
@@ -462,6 +470,18 @@ class StripMainWindow(QMainWindow):
             self._problems.addItem(str(err))
             self._log.appendPlainText(f"✗ {err}")
 
+    def _on_busy_hint(self, text: str) -> None:
+        """Busy feedback around a deliberate main-thread block (the
+        one-time heavy preload) — spec 002 FR-12."""
+        from PySide6.QtWidgets import QApplication
+
+        if text:
+            QApplication.setOverrideCursor(Qt.BusyCursor)
+            self._status_msg.setText(text)
+            QApplication.processEvents()   # paint the note BEFORE the block
+        else:
+            QApplication.restoreOverrideCursor()
+
     #: The config sections whose current values an "Assign settings" snapshot
     #: captures, per tool (Track 2 dispatches runs with these per-profile).
     _ASSIGN_SECTIONS = {
@@ -522,7 +542,60 @@ class StripMainWindow(QMainWindow):
             if hasattr(canvas, "set_palette"):
                 canvas.set_palette(self._palette)
 
+    # ------------------------------------------------------------------
+    # Window-state persistence (spec 002 FR-14 — geometry, docks,
+    # splitter sizes, rail collapse survive restarts)
+    # ------------------------------------------------------------------
+    _QS_ORG = "HV_Pro"
+    _QS_APP = "hv_strip_v2"
+
+    @staticmethod
+    def _persist_enabled() -> bool:
+        # Offscreen (test) sessions must never touch the user's real
+        # window state; a persistence test opts in explicitly.
+        import os
+
+        return (os.environ.get("QT_QPA_PLATFORM") != "offscreen"
+                or bool(os.environ.get("HVSTRIP_TEST_PERSIST")))
+
+    def _rails(self) -> Dict[str, QWidget]:
+        return {"files": self._files_rail, "left": self._left_rail,
+                "right": self._right_rail, "props": self._props_rail}
+
+    def _restore_window_state(self) -> None:
+        from PySide6.QtCore import QSettings
+
+        if not self._persist_enabled():
+            return
+        s = QSettings(self._QS_ORG, self._QS_APP)
+        geo = s.value("geometry")
+        if geo is not None:
+            self.restoreGeometry(geo)
+        st = s.value("windowState")
+        if st is not None:
+            self.restoreState(st)
+        for key, rail in self._rails().items():
+            val = s.value(f"rail/{key}")
+            if val is not None:
+                rail.set_collapsed(val in (True, "true", "1", 1))
+        sp = s.value("splitter")
+        if sp is not None:
+            self._splitter.restoreState(sp)
+
+    def _save_window_state(self) -> None:
+        from PySide6.QtCore import QSettings
+
+        if not self._persist_enabled():
+            return
+        s = QSettings(self._QS_ORG, self._QS_APP)
+        s.setValue("geometry", self.saveGeometry())
+        s.setValue("windowState", self.saveState())
+        s.setValue("splitter", self._splitter.saveState())
+        for key, rail in self._rails().items():
+            s.setValue(f"rail/{key}", rail.is_collapsed())
+
     def closeEvent(self, event) -> None:  # noqa: N802
+        self._save_window_state()
         self.app_state.shutdown()
         super().closeEvent(event)
 

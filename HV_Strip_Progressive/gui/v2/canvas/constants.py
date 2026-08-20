@@ -43,5 +43,37 @@ LEGEND_ANCHORS = {
     "bottom-left":  ((0, 1), (0, 1)),
 }
 
-# Default halfspace draw extension (metres) below the last real layer
+# Fixed halfspace draw extension (metres) — pass explicitly when a fixed
+# depth is wanted; the shared default is the proportional legacy rule below.
 HALFSPACE_EXTENSION_M = 50.0
+
+
+def layers_to_staircase(layers, halfspace_extension=None):
+    """Layer dicts → staircase ``(vs_vals, depths)`` lists.
+
+    The ONE staircase builder — the pyqtgraph canvases and the mpl previews
+    all draw from here, so the same profile renders the same bottom geometry
+    in every tool (the two prior copies had drifted on this).
+
+    Each dict needs ``vs`` and one of ``thickness`` / ``h``; the LAST layer
+    is the half-space, drawn ``halfspace_extension`` metres deep — or, when
+    ``None`` (the default), the legacy-preview rule
+    ``max(0.25 × finite depth, 1 m)``.
+    """
+    n = len(layers)
+    finite_depth = sum(
+        float(lay.get("thickness", lay.get("h", 0.0)))
+        for lay in layers[:-1])
+    if halfspace_extension is None:
+        halfspace_extension = max(finite_depth * 0.25, 1.0)
+    depths, vs_vals = [], []
+    z = 0.0
+    for i, lay in enumerate(layers):
+        vs = float(lay["vs"])
+        h = float(lay.get("thickness", lay.get("h", 0.0)))
+        if i == n - 1:
+            h = halfspace_extension
+        depths.extend([z, z + h])
+        vs_vals.extend([vs, vs])
+        z += h
+    return vs_vals, depths

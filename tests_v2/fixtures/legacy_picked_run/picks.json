@@ -1,0 +1,61 @@
+{
+  "strip_dir_rel": "run/strip",
+  "steps": {
+    "Step0_6-layer": {
+      "f0": {
+        "frequency": 4.1,
+        "amplitude": 3.3,
+        "label": "f0",
+        "source": "manual"
+      },
+      "secondary": [
+        {
+          "frequency": 8.5,
+          "amplitude": 1.9,
+          "label": "sec1",
+          "source": "manual"
+        },
+        {
+          "frequency": 12.3,
+          "amplitude": 1.5,
+          "label": "sec2",
+          "source": "manual"
+        }
+      ],
+      "vs30": 252.7,
+      "vsavg": 341.2,
+      "bedrock_depth": 44.0
+    },
+    "Step1_5-layer": {
+      "f0": {
+        "frequency": 4.6,
+        "amplitude": 3.1,
+        "label": "f0",
+        "source": "manual"
+      },
+      "secondary": [
+        {
+          "frequency": 9.1,
+          "amplitude": 1.7,
+          "label": "sec1",
+          "source": "manual"
+        }
+      ],
+      "vs30": 261.4,
+      "vsavg": 355.9,
+      "bedrock_depth": 38.0
+    },
+    "Step2_4-layer": {
+      "f0": {
+        "frequency": 5.25,
+        "amplitude": 2.85,
+        "label": "f0",
+        "source": "manual"
+      },
+      "secondary": [],
+      "vs30": 270.0,
+      "vsavg": null,
+      "bedrock_depth": null
+    }
+  }
+}

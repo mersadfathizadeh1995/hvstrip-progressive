@@ -1,0 +1,17 @@
+{
+  "Step0_6-layer": {
+    "vs30": 252.7,
+    "vsavg": 341.2,
+    "bedrock_depth": 44.0
+  },
+  "Step1_5-layer": {
+    "vs30": 261.4,
+    "vsavg": 355.9,
+    "bedrock_depth": 38.0
+  },
+  "Step2_4-layer": {
+    "vs30": 270.0,
+    "vsavg": null,
+    "bedrock_depth": null
+  }
+}

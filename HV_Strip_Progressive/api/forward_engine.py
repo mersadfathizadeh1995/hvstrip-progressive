@@ -50,6 +50,9 @@ class PeakInfo:
     """Human-readable label, e.g. ``"f0"``, ``"f1"``."""
     source: str = "auto"
     """``"auto"`` or ``"manual"``."""
+    label_pos: Optional[List[float]] = None
+    """Annotation-label position ``[x, y]`` in data coordinates when the
+    user has dragged/placed the label (Track 2); ``None`` = auto layout."""
 
 
 @dataclass
@@ -437,6 +440,48 @@ def set_manual_peaks(
             source="manual",
         ))
     result.peaks = manual_peaks
+    return result
+
+
+def set_exact_peaks(
+    result: ForwardResult,
+    peaks: List[Dict[str, Any]],
+) -> ForwardResult:
+    """Store user picks VERBATIM (the legacy click semantics — spec 002).
+
+    Unlike :func:`set_manual_peaks` (which snaps to the nearest grid
+    point), this keeps the EXACT picked frequency; a missing amplitude is
+    interpolated from the curve.  ``index`` is stored only as the
+    nearest-bin reference (the legacy behaviour).  ``label_pos`` (a
+    dragged annotation position) is carried through when present.
+
+    Returns a new result with the given peaks.
+    """
+    result = ForwardResult(**{
+        k: getattr(result, k) for k in result.__dataclass_fields__
+    })
+    stored: List[PeakInfo] = []
+    freqs = result.frequencies
+    amps = result.amplitudes
+    for i, p in enumerate(peaks):
+        freq = float(p["frequency"])
+        if p.get("amplitude") is not None:
+            amp = float(p["amplitude"])
+        elif len(freqs):
+            amp = float(np.interp(freq, freqs, amps))
+        else:
+            amp = 0.0
+        idx = int(np.argmin(np.abs(freqs - freq))) if len(freqs) else 0
+        stored.append(PeakInfo(
+            frequency=freq,
+            amplitude=amp,
+            index=idx,
+            label=str(p.get("label") or ("f0" if i == 0 else f"sec{i}")),
+            source=str(p.get("source", "manual")),
+            label_pos=(list(p["label_pos"])
+                       if p.get("label_pos") is not None else None),
+        ))
+    result.peaks = stored
     return result
 
 

@@ -56,14 +56,37 @@ def card(title: str, parent=None, collapsed: bool = False):
     return group, group.content_layout
 
 
+def set_unfocused(widget, value) -> None:
+    """Push *value* into an editable widget ONLY when the user is not
+    mid-edit in it (spec 002 FR-11 — a refresh must never reformat the
+    field being typed in).  Dispatches on the widget's setter."""
+    if widget.hasFocus():
+        return
+    if hasattr(widget, "setValue"):
+        widget.setValue(value)
+    elif hasattr(widget, "setChecked"):
+        widget.setChecked(bool(value))
+    elif hasattr(widget, "setCurrentText"):
+        widget.setCurrentText(value)
+    elif hasattr(widget, "setText"):
+        widget.setText(value)
+
+
 class PhasePanel(QWidget):
     """Base for an interactive phase panel (talks ONLY to AppState).
 
     Subclasses implement :meth:`build` (static layout, once) and
     :meth:`refresh` (update dynamic widgets from the session).  The
-    constructor builds then refreshes; the panel self-subscribes so it
-    refreshes on every AppState change whether or not the shell owns it.
+    constructor builds then refreshes; the panel self-subscribes to the
+    session/result signals, and to ``config_changed`` **routed by
+    section** (spec 002 FR-11): a panel declares the config sections it
+    displays in :attr:`sections` and only refreshes for those.
     """
+
+    #: Config sections this panel displays.  ``None`` = refresh on ANY
+    #: section (legacy behaviour — avoid); ``()`` = config changes never
+    #: refresh this panel; otherwise the exact section names.
+    sections: Optional[tuple] = None
 
     def __init__(self, app_state: AppState, parent=None) -> None:
         super().__init__(parent)
@@ -77,16 +100,17 @@ class PhasePanel(QWidget):
             app_state.research_changed,
         ):
             signal.connect(self.refresh)
-        app_state.config_changed.connect(lambda _s: self.refresh())
+        app_state.config_changed.connect(self._on_config_changed)
         self.refresh()
 
     @property
     def app_state(self) -> AppState:
         return self._app_state
 
-    @property
-    def session(self):
-        return self._app_state.session
+    def _on_config_changed(self, section: str) -> None:
+        if (self.sections is None or section == "*"
+                or section in self.sections):
+            self.refresh()
 
     def build(self) -> None:  # pragma: no cover - subclass
         raise NotImplementedError
@@ -115,5 +139,6 @@ __all__ = [
     "PhasePanel",
     "card",
     "clear_layout",
+    "set_unfocused",
     "status_line",
 ]

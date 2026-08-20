@@ -273,3 +273,27 @@ def test_data_stage_load_focus_table_apply(_qapp, _window):
     # ν was re-derived through the ONE api surface
     fill = _window.app_state.suggest_layer_fill(222.0)
     assert layers[0]["nu"] == pytest.approx(fill["nu"], abs=1e-6)
+
+
+# ======================================================================
+#  Window-state persistence (spec 002 T11 / FR-14)
+# ======================================================================
+def test_window_state_persistence_roundtrip(_qapp, _window, monkeypatch):
+    from PySide6.QtCore import QSettings
+
+    monkeypatch.setenv("HVSTRIP_TEST_PERSIST", "1")
+    monkeypatch.setattr(type(_window), "_QS_APP", "hv_strip_v2_test")
+    settings = QSettings("HV_Pro", "hv_strip_v2_test")
+    try:
+        _window._files_rail.set_collapsed(True)
+        _window._save_window_state()
+        assert settings.value("geometry") is not None
+        assert settings.value("windowState") is not None
+
+        _window._files_rail.set_collapsed(False)
+        _window._restore_window_state()
+        assert _window._files_rail.is_collapsed() is True
+        _window._files_rail.set_collapsed(False)   # leave as found
+    finally:
+        settings.clear()
+        settings.sync()

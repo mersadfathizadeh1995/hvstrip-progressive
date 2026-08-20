@@ -7,7 +7,7 @@ dataclass with sensible defaults drawn from the core modules.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields as dc_fields
 from typing import Optional, List, Dict, Any
 import copy
 import json
@@ -204,6 +204,9 @@ class PeakDetectionConfig:
     """Minimum peak prominence for ``find_peaks``."""
     distance: int = 2
     """Minimum sample distance between peaks."""
+    width: Optional[float] = None
+    """Minimum peak width in samples for ``find_peaks`` (``None`` = off —
+    the legacy Advanced dialog's Width knob)."""
     freq_min: Optional[float] = 0.3
     """Ignore peaks below this frequency [Hz]."""
     freq_max: Optional[float] = None
@@ -221,14 +224,17 @@ class PeakDetectionConfig:
 
     def to_core_config(self) -> Dict[str, Any]:
         """Build the dict expected by ``core.peak_detection.detect_peak``."""
+        params: Dict[str, Any] = {
+            "prominence": self.prominence,
+            "distance": self.distance,
+        }
+        if self.width is not None:      # only when set — behavior-preserving
+            params["width"] = self.width
         return {
             "preset": self.preset,
             "method": self.method,
             "select": self.select,
-            "find_peaks_params": {
-                "prominence": self.prominence,
-                "distance": self.distance,
-            },
+            "find_peaks_params": params,
             "freq_min": self.freq_min,
             "freq_max": self.freq_max,
             "min_amplitude": self.min_amplitude,
@@ -239,18 +245,84 @@ class PeakDetectionConfig:
         }
 
 
+#: The three auto-peak strategies (the legacy dialog's strategy combo).
+AUTO_PEAK_STRATEGIES = ("range_constrained", "preset", "advanced")
+
+
 @dataclass
 class AutoPeakConfig:
-    """Auto-peak settings for multi-peak detection in forward-multiple mode."""
+    """Auto-peak settings for multi-peak detection in forward-multiple mode.
+
+    Track 2 adds the legacy dialog's full three-strategy surface:
+
+    * ``"range_constrained"`` — one peak per armed frequency band
+      (``ranges``; the FIRST band is f0's);
+    * ``"preset"`` — delegate to a :data:`PEAK_PRESET_NAMES` preset;
+    * ``"advanced"`` — the fully-custom :class:`PeakDetectionConfig` params.
+    """
 
     enabled: bool = True
+    strategy: str = "preset"
+    """One of :data:`AUTO_PEAK_STRATEGIES`."""
     n_secondary: int = 2
     """Number of secondary peaks to detect beyond f0."""
+    ranges: List[Dict[str, Any]] = field(default_factory=list)
+    """Per-peak bands for ``range_constrained``: plain dicts
+    ``{"fmin": float, "fmax": float, "use": bool}`` (JSON-shaped so the
+    config funnel round-trips them exactly).  Index 0 = the f0 band."""
     f0_range: tuple = (0.1, 50.0)
     f1_range: tuple = (0.1, 50.0)
     f2_range: tuple = (0.1, 50.0)
     min_prominence: float = 0.1
     min_amplitude: float = 1.5
+
+    def effective_ranges(self) -> List[tuple]:
+        """The ARMED (fmin, fmax) bands, f0's first.
+
+        ``ranges`` wins when non-empty; otherwise the legacy triple
+        ``f0_range``/``f1_range``/``f2_range`` (capped by ``n_secondary``).
+        """
+        if self.ranges:
+            return [(float(r["fmin"]), float(r["fmax"]))
+                    for r in self.ranges if r.get("use", True)]
+        legacy = [self.f0_range, self.f1_range, self.f2_range]
+        return [tuple(r) for r in legacy[: 1 + max(0, self.n_secondary)]]
+
+
+@dataclass
+class MarkerStyleConfig:
+    """Peak marker + annotation style for the interactive HV figures.
+
+    Drives the mpl figure and the Properties rail (spec 002 FR-6);
+    presentation-only — never touches detection or compute.
+    """
+
+    show_markers: bool = True
+    show_annotations: bool = True
+    f0_shape: str = "*"
+    """Matplotlib marker for the primary peak."""
+    f0_size: float = 14.0
+    secondary_shape: str = "*"
+    secondary_size: float = 10.0
+    annotation_fontsize: int = 9
+
+
+@dataclass
+class ResearchStudyConfig:
+    """Persisted Research-tool study settings (spec 002 FR-14 — these
+    previously lived only in widgets and reset every launch)."""
+
+    soilgen_path: str = ""
+    profiles_dir: str = ""
+    n_random: int = 0
+    n_per_scenario: int = 2
+    seed: int = 42
+    engines: List[str] = field(default_factory=lambda: [
+        "diffuse_field", "sh_wave", "ellipticity"])
+    fmin: float = 0.1
+    fmax: float = 30.0
+    nf: int = 500
+    output_dir: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -479,6 +551,9 @@ class HVStripConfig:
     batch: BatchConfig = field(default_factory=BatchConfig)
     postprocess: PostProcessConfig = field(default_factory=PostProcessConfig)
     adaptive: AdaptiveConfig = field(default_factory=AdaptiveConfig)
+    markers: MarkerStyleConfig = field(default_factory=MarkerStyleConfig)
+    research: ResearchStudyConfig = field(
+        default_factory=ResearchStudyConfig)
 
     # -- Serialisation helpers ------------------------------------------------
 
@@ -496,17 +571,42 @@ class HVStripConfig:
     def from_dict(cls, d: Dict[str, Any]) -> "HVStripConfig":
         """Construct from a (possibly partial) dict.
 
-        Missing keys keep their defaults.  Accepts BOTH shapes: a v2
-        dataclass payload (``config_version: 2``) is applied directly; any
-        other dict is treated as the legacy GUI shape and routed through
-        :meth:`from_legacy_gui_dict` (best-effort).
+        Missing keys keep their defaults.  Accepts BOTH shapes and routes:
+
+        * ``config_version >= 2`` → the v2 dataclass payload, applied
+          directly (explicit version always wins);
+        * any legacy-only top-level key (``engine_settings``,
+          ``hv_forward``, …) → :meth:`from_legacy_gui_dict` (best-effort,
+          unmapped leaves logged);
+        * otherwise a dict whose top-level keys all belong to the v2
+          field set — including PARTIAL dicts like ``{"engine": …,
+          "strip": …}`` — applies directly as v2 (the overlap keys
+          ``engine``/``dual_resonance``/``peak_detection`` alone are
+          treated as v2; real legacy payloads always carry a
+          legacy-only key);
+        * anything else falls back to the legacy migrator, whose
+          unmapped-leaf log is the "never silently dropped" contract.
         """
         if not isinstance(d, dict):
             return cls()
-        if d.get("config_version", 0) >= CONFIG_VERSION or _looks_v2(d):
+        keys = set(d) - {"config_version"}
+        v2_fields = {f.name for f in dc_fields(cls)}
+        is_v2 = (
+            d.get("config_version", 0) >= CONFIG_VERSION
+            or (not (keys & _LEGACY_ONLY_KEYS)
+                and (_looks_v2(d) or keys <= v2_fields))
+        )
+        if is_v2:
             cfg = cls()
+            unmapped: List[str] = []
             _apply_dict(cfg, {k: v for k, v in d.items()
-                              if k != "config_version"})
+                              if k != "config_version"}, unmapped=unmapped)
+            if unmapped:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "HVStripConfig.from_dict: %d unmapped v2 key(s) "
+                    "ignored: %s", len(unmapped), unmapped)
             return cfg
         return cls.from_legacy_gui_dict(d)
 
@@ -676,22 +776,37 @@ CONFIG_VERSION = 2
 #: for payloads saved by ``to_dict()`` before the version key existed).
 _V2_MARKER_KEYS = {"frequency", "auto_peak", "postprocess", "adaptive"}
 
+#: Top-level keys that exist ONLY in the legacy GUI dict shape
+#: (``tests/golden/legacy_gui_config.json``).  Any of these routes the
+#: payload to ``from_legacy_gui_dict`` — the overlap keys
+#: (``engine``/``dual_resonance``/``peak_detection``) deliberately do NOT.
+_LEGACY_ONLY_KEYS = {
+    "engine_name", "engine_settings", "generate_report", "hv_forward",
+    "hv_postprocess", "interactive_mode", "plot",
+}
+
 
 def _looks_v2(d: Dict[str, Any]) -> bool:
     return bool(_V2_MARKER_KEYS & set(d.keys()))
 
 
-def _apply_dict(obj: Any, d: Dict[str, Any]) -> None:
+def _apply_dict(obj: Any, d: Dict[str, Any],
+                unmapped: Optional[List[str]] = None,
+                _prefix: str = "") -> None:
     """Recursively apply *d* onto dataclass *obj*, keeping defaults for
-    missing keys.
+    missing keys.  Keys with no matching attribute are collected into
+    *unmapped* (dotted paths) when a list is passed, so callers can log
+    them — never silently dropped without a trace.
     """
     if not isinstance(d, dict):
         return
     for key, value in d.items():
         if not hasattr(obj, key):
+            if unmapped is not None:
+                unmapped.append(f"{_prefix}{key}")
             continue
         current = getattr(obj, key)
         if hasattr(current, "__dataclass_fields__") and isinstance(value, dict):
-            _apply_dict(current, value)
+            _apply_dict(current, value, unmapped, f"{_prefix}{key}.")
         else:
             setattr(obj, key, value)

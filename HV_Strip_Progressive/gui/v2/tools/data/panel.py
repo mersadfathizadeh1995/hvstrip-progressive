@@ -79,6 +79,7 @@ class _BrowseRow(QWidget):
 
 
 class DataToolPanel(PhasePanel):
+    sections = ()          # displays no config — never refresh on config
     """The unified loader (left rail of the Data stage)."""
 
     tool = StripTool.DATA

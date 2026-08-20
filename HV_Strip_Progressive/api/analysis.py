@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .config import (
@@ -44,6 +45,7 @@ from .forward_engine import (
     compute_forward_batch,
     detect_peaks_on_curve,
     set_manual_peaks,
+    set_exact_peaks,
     list_engines,
     ForwardResult,
     MultiForwardResult,
@@ -71,6 +73,13 @@ from .peak_ops import (
 from .dual_resonance_ops import (
     extract_dual_resonance,
     compute_theoretical_frequencies,
+)
+from .persist_ops import (
+    peak_to_dict,
+    persist_peaks,
+    rehydrate_results_folder,
+    resolve_step_folder,
+    _normalize_step_picks,
 )
 from .report_ops import (
     generate_strip_report,
@@ -112,6 +121,9 @@ class HVStripAnalysis:
         self._strip_results: Dict[str, StripResult] = {}
         self._batch_result: Optional[BatchStripResult] = None
         self._research_runner: Optional[Any] = None  # ComparisonStudyRunner
+        #: profile → step-folder → canonical picks (spec 002; the session
+        #: side of the picked_peaks.json sidecar).
+        self._picked_peaks: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
     # ------------------------------------------------------------------
     # Configuration
@@ -198,6 +210,57 @@ class HVStripAnalysis:
     def get_defaults(self) -> Dict[str, Any]:
         """Return the default configuration."""
         return HVStripConfig().to_dict()
+
+    # ------------------------------------------------------------------
+    # Public state accessors + the config funnel (spec 002 DC-5 — the
+    # GUI reads THESE; the private backing fields are not its business)
+    # ------------------------------------------------------------------
+
+    @property
+    def config(self) -> HVStripConfig:
+        """The live config object (READ it freely; mutate only through
+        ``set_*`` / :meth:`update_section` / :meth:`apply_config_payload`)."""
+        return self._config
+
+    def forward_results(self) -> Dict[str, ForwardResult]:
+        """Live forward results by profile name (read-only snapshot dict)."""
+        return dict(self._forward_results)
+
+    def strip_results(self) -> Dict[str, StripResult]:
+        """Live strip results by profile name (read-only snapshot dict)."""
+        return dict(self._strip_results)
+
+    def batch_result(self) -> Optional[BatchStripResult]:
+        """The last batch-stripping result, if any."""
+        return self._batch_result
+
+    def update_section(self, section: str, **fields: Any) -> Dict[str, Any]:
+        """Set fields on ONE config section — the sanctioned GUI funnel.
+
+        Unknown sections fail; unknown field names are applied best-effort
+        and reported under ``unmapped`` (never silently dropped).
+        """
+        from .config import _apply_dict
+
+        target = getattr(self._config, section, None)
+        if target is None or not hasattr(target, "__dataclass_fields__"):
+            return {"success": False,
+                    "error": f"Unknown config section: {section!r}"}
+        unmapped: List[str] = []
+        _apply_dict(target, dict(fields), unmapped=unmapped)
+        return {"success": True, "section": section, "unmapped": unmapped}
+
+    def apply_config_payload(self, payload: Any) -> Dict[str, Any]:
+        """Replace the whole config from a persisted payload (v2 or
+        legacy — routed through the ONE load funnel)."""
+        from .session_io import load_config_payload
+
+        self._config = load_config_payload(payload)
+        return {"success": True}
+
+    def config_payload(self) -> Dict[str, Any]:
+        """The persistable v2 payload (``config_version`` included)."""
+        return self._config.to_dict()
 
     # ------------------------------------------------------------------
     # Profile management
@@ -324,6 +387,12 @@ class HVStripAnalysis:
             })
         return result
 
+    def profile_names(self) -> List[str]:
+        """Loaded profile names only — CHEAP (no summary/Vs30 computation).
+        For status probes and refresh paths (spec 002 FR-11); use
+        :meth:`get_profiles` when the summaries are actually needed."""
+        return list(self._profiles)
+
     def get_profile(self, name: str) -> Dict[str, Any]:
         """Return full profile dict including layers."""
         if name not in self._profiles:
@@ -437,6 +506,389 @@ class HVStripAnalysis:
                 p.__dict__ for p in self._forward_results[profile_name].peaks
             ]
         }
+
+    def set_profile_peaks(
+        self,
+        profile_name: str,
+        peaks: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Store user-picked forward peaks VERBATIM (spec 002 FR-1).
+
+        The legacy click semantics: the EXACT picked frequency is kept and
+        a missing amplitude interpolated — no snapping (contrast
+        :meth:`set_manual_peaks_for_profile`).  ``label_pos`` entries (a
+        dragged annotation position) round-trip.
+        """
+        if profile_name not in self._forward_results:
+            return {"success": False,
+                    "error": f"No forward result for '{profile_name}'"}
+        result = set_exact_peaks(self._forward_results[profile_name], peaks)
+        self._forward_results[profile_name] = result
+        return {"success": True,
+                "peaks": [peak_to_dict(p) for p in result.peaks]}
+
+    # ------------------------------------------------------------------
+    # Picked peaks per strip step (spec 002 FR-4/FR-5) — the session
+    # store behind the interactive figure + the write-back chain
+    # ------------------------------------------------------------------
+
+    _EMPTY_STEP_PICKS: Dict[str, Any] = {
+        "f0": None, "secondary": [], "vs30": None, "vsavg": None,
+        "bedrock_depth": None,
+    }
+
+    def _resolve_step_key(self, profile_name: str, step: str) -> str:
+        """Canonicalise *step* to the on-disk step-folder name when the
+        profile's strip directory is known."""
+        strip_res = self._strip_results.get(profile_name)
+        if strip_res is not None and strip_res.strip_directory:
+            folder = resolve_step_folder(
+                Path(strip_res.strip_directory), str(step))
+            if folder is not None:
+                return folder.name
+        return str(step)
+
+    def set_step_peaks(
+        self,
+        profile_name: str,
+        step: str,
+        f0: Any = None,
+        secondary: Optional[List[Any]] = None,
+        vs30: Optional[float] = None,
+        vsavg: Optional[float] = None,
+        bedrock_depth: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Merge picks for ONE strip step into the session store.
+
+        ``None`` arguments leave the stored value unchanged (pass
+        ``secondary=[]`` to clear the secondaries; use
+        :meth:`clear_step_peaks` to wipe a step).  Peaks may be dicts,
+        :class:`PeakInfo`, or legacy ``(freq, amp[, idx])`` tuples.
+        """
+        key = self._resolve_step_key(profile_name, step)
+        entry = self._picked_peaks.setdefault(profile_name, {}).setdefault(
+            key, dict(self._EMPTY_STEP_PICKS, secondary=[]))
+        updates: Dict[str, Any] = {}
+        if f0 is not None:
+            updates["f0"] = f0
+        if secondary is not None:
+            updates["secondary"] = secondary
+        norm = _normalize_step_picks(updates)
+        if f0 is not None:
+            entry["f0"] = norm["f0"]
+        if secondary is not None:
+            entry["secondary"] = norm["secondary"]
+        for k, v in (("vs30", vs30), ("vsavg", vsavg),
+                     ("bedrock_depth", bedrock_depth)):
+            if v is not None:
+                entry[k] = v
+        return {"success": True, "step": key, **self._copy_entry(entry)}
+
+    @staticmethod
+    def _copy_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+        """Detach an envelope copy from the live store."""
+        return {k: (list(v) if isinstance(v, list) else
+                    (dict(v) if isinstance(v, dict) else v))
+                for k, v in entry.items()}
+
+    def get_step_peaks(self, profile_name: str, step: str) -> Dict[str, Any]:
+        """Picks for one step (an empty entry when nothing is stored)."""
+        key = self._resolve_step_key(profile_name, step)
+        entry = self._picked_peaks.get(profile_name, {}).get(key)
+        if entry is None:
+            entry = dict(self._EMPTY_STEP_PICKS, secondary=[])
+        return {"success": True, "step": key, **self._copy_entry(entry)}
+
+    def picked_peaks(self, profile_name: str) -> Dict[str, Any]:
+        """The whole picks store for a profile (deep copy)."""
+        import copy as _copy
+
+        return {"success": True,
+                "steps": _copy.deepcopy(
+                    self._picked_peaks.get(profile_name, {}))}
+
+    def clear_step_peaks(
+        self,
+        profile_name: str,
+        step: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Clear one step's picks, or the profile's whole store."""
+        if step is None:
+            self._picked_peaks.pop(profile_name, None)
+            return {"success": True, "cleared": "all"}
+        key = self._resolve_step_key(profile_name, step)
+        self._picked_peaks.get(profile_name, {}).pop(key, None)
+        return {"success": True, "cleared": key}
+
+    def persist_picked_peaks(
+        self,
+        profile_name: str,
+        regenerate_report: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """The legacy Finish write-back chain (spec 002 FR-4), Qt-free.
+
+        Writes the sidecar + per-step summary CSVs + ``vs_results.json``
+        (via :func:`persist_ops.persist_peaks`), mirrors the f0 picks onto
+        the in-memory :class:`StripResult`, and — when
+        *regenerate_report* is true (default: the ``strip.generate_report``
+        config flag) — regenerates the comprehensive report from the
+        rewritten files, exactly as the legacy app did.
+        """
+        store = self._picked_peaks.get(profile_name)
+        if not store:
+            return {"success": False,
+                    "error": f"No picked peaks for '{profile_name}'"}
+        strip_res = self._strip_results.get(profile_name)
+        if strip_res is None or not strip_res.strip_directory:
+            return {"success": False,
+                    "error": f"No strip result with a strip directory "
+                             f"for '{profile_name}'"}
+        env = persist_peaks(strip_res.strip_directory, store)
+        if not env.get("success"):
+            return env
+
+        # Mirror the legacy in-memory update: f0 picks overwrite step peaks.
+        by_num: Dict[int, Dict[str, Any]] = {}
+        for folder_name, pdata in store.items():
+            f0 = pdata.get("f0")
+            if not f0:
+                continue
+            try:
+                num = int(folder_name.split("_")[0].replace("Step", ""))
+            except ValueError:
+                continue
+            by_num[num] = f0
+        for step_res in strip_res.steps:
+            f0 = by_num.get(step_res.step_number)
+            if f0:
+                step_res.peak_frequency = float(f0["frequency"])
+                step_res.peak_amplitude = float(f0["amplitude"])
+
+        if regenerate_report is None:
+            regenerate_report = bool(self._config.strip.generate_report)
+        if regenerate_report:
+            report = generate_strip_report(
+                strip_dir=strip_res.strip_directory,
+                output_dir=str(Path(strip_res.strip_directory).parent),
+                config=self._config.report,
+            )
+            env["report"] = report
+            if "error" not in report:
+                strip_res.report_files = dict(report)
+        return env
+
+    @staticmethod
+    def vs_context_for_layers(
+        layers: List[Dict[str, Any]],
+        bedrock_depth: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Vs30 + VsAvg-to-bedrock + interface depths for a layer stack —
+        the legacy wizard's Vs mini-panel numbers (spec 002 FR-9):
+        Vs30 = 30 m WITH half-space extrapolation; VsAvg = to the bedrock
+        interface (default: the bottom of the finite layers) WITHOUT it.
+        """
+        from ..core.vs_average import compute_vs_average
+
+        pairs = [(float(ly.get("thickness", ly.get("h", 0.0))),
+                  float(ly["vs"])) for ly in layers]
+        finite = [h for h, _ in pairs if h > 0]
+        interfaces: List[float] = []
+        z = 0.0
+        for h in finite:
+            z += h
+            interfaces.append(round(z, 6))
+        total = z
+        target = float(bedrock_depth) if bedrock_depth else total
+        out: Dict[str, Any] = {"success": True, "interfaces": interfaces,
+                               "bedrock_depth": target if target > 0 else None,
+                               "vs30": None, "vs30_extrapolated": False,
+                               "vsavg": None}
+        if not pairs:
+            return out
+        try:
+            vs30 = compute_vs_average(pairs, target_depth=30.0,
+                                      use_halfspace=True)
+            out["vs30"] = float(vs30.vs_avg)
+            out["vs30_extrapolated"] = bool(vs30.extrapolated)
+        except Exception as exc:  # noqa: BLE001 — a status, never a crash
+            out["vs30_error"] = str(exc)
+        if target > 0:
+            try:
+                vsavg = compute_vs_average(pairs, target_depth=target,
+                                           use_halfspace=False)
+                out["vsavg"] = float(vsavg.vs_avg)
+            except Exception as exc:  # noqa: BLE001
+                out["vsavg_error"] = str(exc)
+        return out
+
+    def dual_resonance_overrides(self, profile_name: str) -> Dict[str, Any]:
+        """Picked f0 per step as ``{step_folder: (freq, amp)}`` — the
+        ``peak_overrides`` the dual-resonance figure substitutes for its
+        auto-detected f0/f1 (the legacy figure-studio hand-off)."""
+        store = self._picked_peaks.get(profile_name, {})
+        overrides: Dict[str, Any] = {}
+        for step, pdata in store.items():
+            f0 = pdata.get("f0")
+            if f0:
+                overrides[step] = (float(f0["frequency"]),
+                                   float(f0["amplitude"]))
+        return {"success": True, "overrides": overrides}
+
+    def load_results_folder(
+        self,
+        path: str,
+        profile_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Re-open an existing strip results tree WITHOUT recompute
+        (spec 002 FR-5) — v2 trees (sidecar) and legacy trees alike.
+
+        The rehydrated :class:`StripResult` + picks register under
+        *profile_name* (default: the folder's name), ready for further
+        picking and :meth:`persist_picked_peaks`.
+        """
+        env = rehydrate_results_folder(path)
+        if not env.get("success"):
+            return env
+        result: StripResult = env["result"]
+        name = profile_name or Path(path).name
+        result.initial_profile = name
+        self._strip_results[name] = result
+
+        def _entry(pdata: Dict[str, Any]) -> Dict[str, Any]:
+            e = dict(self._EMPTY_STEP_PICKS, secondary=[])  # fresh list
+            for k, v in (pdata or {}).items():
+                if k in e:
+                    e[k] = list(v) if isinstance(v, list) else v
+            return e
+
+        self._picked_peaks[name] = {
+            step: _entry(pdata)
+            for step, pdata in (env["picks"] or {}).items()
+        }
+        return {"success": True, "name": name,
+                "n_steps": len(result.steps),
+                "strip_directory": result.strip_directory,
+                "picks_source": env["picks_source"]}
+
+    # ------------------------------------------------------------------
+    # Checked-set dispatch (spec 002 FR-7) — run EXACTLY the given
+    # profiles, with per-profile setting overrides + cooperative cancel
+    # ------------------------------------------------------------------
+
+    def compute_forward_for(
+        self,
+        names: List[str],
+        settings_by_name: Optional[Dict[str, Dict[str, Any]]] = None,
+        progress_cb=None,
+        cancel=None,
+    ) -> Dict[str, Any]:
+        """Forward-model the given profiles (the checked run set).
+
+        *settings_by_name* maps a profile to config-section overrides
+        (``{"frequency": {...}, ...}``) applied to a COPY of the session
+        config — the session config itself is never mutated.  *cancel* is
+        any object with ``is_set()`` (e.g. ``threading.Event``), checked
+        BEFORE each item.
+        """
+        from ._progress import emit
+        from .config import _apply_dict
+
+        settings_by_name = settings_by_name or {}
+        names = list(names)
+        total = len(names)
+        completed: List[str] = []
+        failed: List[Dict[str, str]] = []
+        cancelled = False
+        for i, name in enumerate(names, 1):
+            if cancel is not None and cancel.is_set():
+                cancelled = True
+                break
+            emit(progress_cb, type="profile", index=i, total=total,
+                 name=name, state="started")
+            if name not in self._profiles:
+                failed.append({"name": name, "error": "profile not loaded"})
+                emit(progress_cb, type="profile", index=i, total=total,
+                     name=name, state="failed")
+                continue
+            cfg = self._config.copy()
+            overrides = settings_by_name.get(name)
+            if overrides:
+                _apply_dict(cfg, dict(overrides))
+            result = compute_forward(self._profiles[name], config=cfg)
+            self._forward_results[name] = result
+            if result.success:
+                completed.append(name)
+                emit(progress_cb, type="profile", index=i, total=total,
+                     name=name, state="finished")
+            else:
+                failed.append({"name": name,
+                               "error": result.error or "failed"})
+                emit(progress_cb, type="profile", index=i, total=total,
+                     name=name, state="failed")
+        return {"success": not failed and not cancelled,
+                "cancelled": cancelled, "n_total": total,
+                "completed": completed, "failed": failed}
+
+    def run_stripping_for(
+        self,
+        names: List[str],
+        settings_by_name: Optional[Dict[str, Dict[str, Any]]] = None,
+        output_dir: Optional[str] = None,
+        progress_cb=None,
+        cancel=None,
+    ) -> Dict[str, Any]:
+        """Strip the given profiles, each into ``<output>/<name>/``.
+
+        Same override/cancel contract as :meth:`compute_forward_for`.
+        Cancellation is cooperative BETWEEN profiles — one profile's
+        workflow is atomic (the frozen core loop has no cancel hook).
+        """
+        from ._progress import emit
+        from .config import _apply_dict
+
+        settings_by_name = settings_by_name or {}
+        names = list(names)
+        total = len(names)
+        base = output_dir or self._config.output.output_dir or "batch_output"
+        completed: List[str] = []
+        failed: List[Dict[str, str]] = []
+        cancelled = False
+        for i, name in enumerate(names, 1):
+            if cancel is not None and cancel.is_set():
+                cancelled = True
+                break
+            emit(progress_cb, type="profile", index=i, total=total,
+                 name=name, state="started")
+            if name not in self._profiles:
+                failed.append({"name": name, "error": "profile not loaded"})
+                emit(progress_cb, type="profile", index=i, total=total,
+                     name=name, state="failed")
+                continue
+            cfg = self._config.copy()
+            overrides = settings_by_name.get(name)
+            if overrides:
+                _apply_dict(cfg, dict(overrides))
+            result = run_stripping(
+                self._profiles[name],
+                output_dir=os.path.join(base, name),
+                config=cfg,
+                generate_report=cfg.strip.generate_report,
+                progress_cb=progress_cb,
+            )
+            self._strip_results[name] = result
+            if result.success:
+                completed.append(name)
+                emit(progress_cb, type="profile", index=i, total=total,
+                     name=name, state="finished")
+            else:
+                failed.append({"name": name,
+                               "error": result.error or "failed"})
+                emit(progress_cb, type="profile", index=i, total=total,
+                     name=name, state="failed")
+        return {"success": not failed and not cancelled,
+                "cancelled": cancelled, "n_total": total,
+                "completed": completed, "failed": failed,
+                "output_dir": base}
 
     # ------------------------------------------------------------------
     # Stripping

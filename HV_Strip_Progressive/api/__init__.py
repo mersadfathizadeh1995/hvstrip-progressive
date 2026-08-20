@@ -9,11 +9,14 @@ Main entry point: :class:`HVStripAnalysis` in :mod:`.analysis`.
 """
 
 from .config import (
+    AUTO_PEAK_STRATEGIES,
     CONFIG_VERSION,
     EngineConfig,
     FrequencyConfig,
     PeakDetectionConfig,
     AutoPeakConfig,
+    MarkerStyleConfig,
+    ResearchStudyConfig,
     StripConfig,
     DualResonanceConfig,
     ReportConfig,
@@ -47,6 +50,14 @@ from .forward_engine import ForwardResult, MultiForwardResult, PeakInfo
 from .strip_engine import StripResult, StepResult
 from .batch_engine import BatchStripResult, ProfileStripResult
 from .session_io import load_config_payload
+from .persist_ops import (
+    SIDECAR_NAME,
+    load_picks,
+    peak_from_dict,
+    peak_to_dict,
+    persist_peaks,
+    rehydrate_results_folder,
+)
 
 __all__ = [
     # Orchestrator
@@ -55,11 +66,21 @@ __all__ = [
     # Config funnel
     "CONFIG_VERSION",
     "load_config_payload",
+    # Picked-peaks persistence (spec 002)
+    "SIDECAR_NAME",
+    "persist_peaks",
+    "load_picks",
+    "rehydrate_results_folder",
+    "peak_to_dict",
+    "peak_from_dict",
+    "AUTO_PEAK_STRATEGIES",
     # Configs
     "EngineConfig",
     "FrequencyConfig",
     "PeakDetectionConfig",
     "AutoPeakConfig",
+    "MarkerStyleConfig",
+    "ResearchStudyConfig",
     "StripConfig",
     "DualResonanceConfig",
     "ReportConfig",

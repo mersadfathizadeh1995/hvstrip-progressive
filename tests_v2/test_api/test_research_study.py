@@ -111,8 +111,11 @@ def test_inner_phase_error_surfaces_as_failure(analysis):
 
 def test_metrics_single_category_terminates():
     """compute_metrics recursed unconditionally per category and could
-    never finish on a non-empty dataset (fixed: recurse only when the
-    dataset spans >1 category)."""
+    never finish on a non-empty dataset.  The recursion is capped by the
+    ``_with_categories`` flag — NOT by the category count, so a
+    single-category dataset still gets its one per_category entry (the
+    old ``len(categories) > 1`` guard silently produced an empty dict,
+    zeroing runner ``n_categories`` and dropping the report panel)."""
     from HV_Strip_Progressive.research.config import MetricsConfig
     from HV_Strip_Progressive.research.forward_comparison import (
         ComparisonDataset,
@@ -134,7 +137,8 @@ def test_metrics_single_category_terminates():
         engine_names=["sh_wave"])
     m = compute_metrics(one_cat, MetricsConfig())      # must terminate
     assert m.engine_stats[0].n_successful == 2
-    assert m.per_category == {}
+    assert set(m.per_category) == {"models"}           # ONE entry, not {}
+    assert m.per_category["models"].per_category == {}  # recursion capped
 
     two_cats = ComparisonDataset(
         comparisons=[comp("a", "soft"), comp("b", "stiff")],

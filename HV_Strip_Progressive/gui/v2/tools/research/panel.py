@@ -56,6 +56,7 @@ class _ResearchPage(PhasePanel):
     phase = ""
     title = ""
     blurb = ""
+    sections = ("research",)
 
     def __init__(self, app_state, owner: "ResearchToolPanel", parent=None):
         self._owner = owner
@@ -176,10 +177,12 @@ class ComparisonPage(_ResearchPage):
     phase = "comparison"
     title = "2 · Comparison"
     blurb = "Run every enabled engine on every generated profile."
+    sections = ("research", "engine")   # engine availability card
 
     def build_cards(self, body) -> None:
         grp, gl = card("Engines")
         self.engine_checks: Dict[str, QCheckBox] = {}
+        self._forced_off: set = set()   # engines WE unchecked (unavailable)
         for eng in _ENGINES:
             chk = QCheckBox(eng)
             chk.setChecked(True)
@@ -213,9 +216,16 @@ class ComparisonPage(_ResearchPage):
         for eng, chk in self.engine_checks.items():
             available = bool(report.get(eng, {}).get("available"))
             chk.setEnabled(available)
+            chk.setText(eng if available else f"{eng}  (unavailable)")
             if not available:
+                if chk.isChecked():
+                    self._forced_off.add(eng)   # OUR uncheck, not the user's
                 chk.setChecked(False)
-                chk.setText(f"{eng}  (unavailable)")
+            elif eng in self._forced_off:
+                # The engine came back (paths configured) — undo OUR uncheck;
+                # a user's own uncheck of an available engine is left alone.
+                self._forced_off.discard(eng)
+                chk.setChecked(True)
 
     def summarize(self, result: Dict[str, Any]) -> str:
         total = result.get("total_runs")

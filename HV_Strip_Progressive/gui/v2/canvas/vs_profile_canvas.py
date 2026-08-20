@@ -17,46 +17,30 @@ from .constants import (
     BEST_LINE_WIDTH,
     BEST_MODEL_COLOR,
     ENSEMBLE_LINE_WIDTH,
-    HALFSPACE_EXTENSION_M,
     MULTI_COLORS,
+    layers_to_staircase,
 )
 
 
 def _layers_to_staircase(
     layers: List[Dict],
-    halfspace_extension: float = HALFSPACE_EXTENSION_M,
+    halfspace_extension: Optional[float] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Convert a list of layer dicts into staircase (vs, depth) arrays.
 
-    Parameters
-    ----------
-    layers : list of dict
-        Each dict must have a ``vs`` key and one of ``thickness`` / ``h``
-        for the layer thickness (the last / halfspace layer's thickness
-        is replaced by ``halfspace_extension``).
-    halfspace_extension : float
-        Visual extension below the last real interface (metres).
+    Thin numpy wrapper over the shared :func:`constants.layers_to_staircase`
+    (the ONE staircase builder — keeps every canvas's bottom geometry
+    identical).  ``halfspace_extension=None`` uses the shared proportional
+    rule ``max(0.25 × finite depth, 1 m)``; pass e.g.
+    ``HALFSPACE_EXTENSION_M`` for a fixed depth.
 
     Returns
     -------
     vs_vals, depths : np.ndarray
         Arrays suitable for a pyqtgraph stepped line plot.
     """
-    depths: List[float] = []
-    vs_vals: List[float] = []
-    z = 0.0
-    n = len(layers)
-    for i, lay in enumerate(layers):
-        vs = float(lay["vs"])
-        h = float(lay.get("thickness", lay.get("h", 0.0)))
-        if i < n - 1:
-            depths.extend([z, z + h])
-            vs_vals.extend([vs, vs])
-            z += h
-        else:
-            depths.extend([z, z + halfspace_extension])
-            vs_vals.extend([vs, vs])
-    return np.asarray(vs_vals), np.asarray(depths)
+    vs_vals, depths = layers_to_staircase(layers, halfspace_extension)
+    return np.asarray(vs_vals, dtype=float), np.asarray(depths, dtype=float)
 
 
 class VsProfileCanvas(QWidget):

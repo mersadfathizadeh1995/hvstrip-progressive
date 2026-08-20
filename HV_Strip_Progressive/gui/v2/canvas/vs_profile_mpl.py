@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from HV_Strip_Progressive.gui.v2.canvas.constants import layers_to_staircase
 from HV_Strip_Progressive.gui.v2.canvas.mpl_widget import MplFigureWidget
 
 
@@ -58,26 +59,18 @@ class VsProfileMpl(MplFigureWidget):
         self.figure.clear()
         ax = self.figure.add_subplot(111)
 
-        finite = [ly for ly in layers if not ly.get("is_halfspace")
-                  and ly.get("thickness", 0) > 0]
-        hs = [ly for ly in layers if ly.get("is_halfspace")
-              or ly.get("thickness", 0) == 0]
-
-        depths, vs_vals = [], []
-        z = 0.0
-        for ly in finite:
-            depths += [z, z + ly["thickness"]]
-            vs_vals += [ly["vs"], ly["vs"]]
-            z += ly["thickness"]
-        total_finite = z
-        if hs:
-            hs_depth = max(total_finite * 0.25, 1.0)
-            depths += [z, z + hs_depth]
-            vs_vals += [hs[0]["vs"], hs[0]["vs"]]
-            z += hs_depth
+        # ONE staircase source (canvas.constants) — the last layer is the
+        # half-space, extended by the shared proportional rule so this
+        # preview matches the Forward/Strip canvases exactly.
+        vs_vals, depths = layers_to_staircase(layers)
+        n_finite = max(len(layers) - 1, 0)
+        total_finite = sum(
+            float(ly.get("thickness", ly.get("h", 0.0)))
+            for ly in layers[:-1])
+        z = depths[-1] if depths else 0.0
 
         ax.plot(vs_vals, depths, color=line_color, linewidth=1.8)
-        if hs:
+        if len(layers) > 1:
             ax.axhline(total_finite, color=hs_color, linewidth=0.8,
                        linestyle="--", alpha=0.6)
             ax.axhspan(total_finite, z, color=hs_color, alpha=0.05)
@@ -93,7 +86,7 @@ class VsProfileMpl(MplFigureWidget):
         ax.set_xlabel("Vs (m/s)", fontsize=9)
         ax.set_ylabel("Depth (m)", fontsize=9)
         name = (self._profile or {}).get("name", "")
-        ax.set_title(f"{name} · {len(finite)}L" if name else f"{len(finite)}L",
+        ax.set_title(f"{name} · {n_finite}L" if name else f"{n_finite}L",
                      fontsize=10)
         ax.tick_params(labelsize=8)
         self.style_axes(ax)

@@ -1,12 +1,16 @@
 """Serialized session-op execution off the GUI thread + a progress coalescer.
 
-The house worker layer for HV Invert (copy-not-import from the bedrock
-reference, extended for HV Invert's **dict** progress frames).
+The house worker layer for HV Strip (copy-not-import from the invert_hvsr
+reference, extended for the **dict** progress frames).
 
 * :class:`OpQueue` — one live :class:`OpWorker` ``QThread`` at a time; the rest
   queue.  Ops are named zero-arg callables (bound to the session by
-  :class:`AppState`) returning an api envelope dict.  Nothing is caught here —
-  the api already returns envelopes for every domain failure.
+  :class:`AppState`) returning an api envelope dict.  Unlike the invert
+  reference, this api can RAISE (e.g. ``_resolve_profile`` → ``KeyError``
+  before any envelope wrapping), so :meth:`OpWorker.run` catches everything
+  and synthesizes a failure envelope — if it didn't, ``finished_env`` would
+  never fire, ``OpQueue._current`` would never clear, and the queue would be
+  wedged busy until app restart.
 
 * :class:`ProgressBridge` — the ``progress_cb`` adapter for
   :meth:`InversionSession.run_inversion`.  The session's subprocess-reader (a
@@ -21,6 +25,7 @@ reference, extended for HV Invert's **dict** progress frames).
 from __future__ import annotations
 
 import threading
+import traceback
 from collections import deque
 from typing import Any, Callable, Deque, Dict, Optional, Tuple
 
@@ -96,7 +101,20 @@ class OpWorker(QThread):
         self._fn = fn
 
     def run(self) -> None:  # pragma: no cover - exercised via OpQueue
-        envelope = self._fn()
+        try:
+            envelope = self._fn()
+        except Exception as exc:  # noqa: BLE001 — the queue must never wedge
+            envelope = {
+                "success": False,
+                "error": f"{type(exc).__name__}: {exc}",
+                "traceback": traceback.format_exc(),
+            }
+        if not isinstance(envelope, dict):
+            envelope = {
+                "success": False,
+                "error": (f"op '{self._name}' returned "
+                          f"{type(envelope).__name__}, not an envelope dict"),
+            }
         self.finished_env.emit(self._name, envelope)
 
 

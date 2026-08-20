@@ -55,7 +55,8 @@ HV_Strip_Progressive/
   local_config.py    machine-local engine paths (gpell/git-bash) — the ONLY machine-path surface.
 tests/           legacy suite (~150 pass/24 skip; PyQt5-forced conftest) + tests/golden/ (the
                  COMPUTE LOCK: workflow digests per engine + the legacy GUI config fixture).
-                 tests_v2/ (coming) = PySide6-offscreen suite for the rebuild.
+                 tests_v2/ = the PySide6-offscreen rebuild suite (65 green; SEPARATE process;
+                 needs BOTH the distribution root and HV_Pro on PYTHONPATH for theme_core).
 ```
 
 Data contract (Layer/SoilProfile invariants, the HVf text format, peel sequences, result

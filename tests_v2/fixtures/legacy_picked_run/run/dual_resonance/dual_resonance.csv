@@ -1,0 +1,2 @@
+profile_name,success,n_layers,total_depth_m,f0_Hz,a0,f0_theoretical_Hz,f1_Hz,a1,f1_theoretical_Hz,freq_ratio,max_freq_shift_Hz,controlling_step,separation_success,error
+tmpwnuoqj63,True,7,30.0,4.244633,13.089979,2.964123420070896,4.244633,11.905231,4.571428571428571,1.0,0.27628900000000023,5,False,

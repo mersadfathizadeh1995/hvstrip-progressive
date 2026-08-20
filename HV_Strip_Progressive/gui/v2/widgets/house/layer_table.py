@@ -209,19 +209,22 @@ class LayerTable(QWidget):
 
         combo = QComboBox()
         combo.addItems(VP_MODES)
-        combo.currentIndexChanged.connect(
-            lambda _i, row=r: self._on_mode_changed(row))
         self.table.setCellWidget(r, COL_VPMODE, combo)
+        combo.currentIndexChanged.connect(
+            lambda _i, w=combo: self._on_mode_changed(
+                self._widget_row(COL_VPMODE, w)))
 
         cb = QCheckBox()
         cb.setChecked(is_hs)
-        cb.stateChanged.connect(lambda _s, row=r: self._on_hs_changed(row))
         holder = QWidget()
         hl = QHBoxLayout(holder)
         hl.addWidget(cb)
         hl.setAlignment(Qt.AlignCenter)
         hl.setContentsMargins(0, 0, 0, 0)
         self.table.setCellWidget(r, COL_HS, holder)
+        cb.stateChanged.connect(
+            lambda _s, w=holder: self._on_hs_changed(
+                self._widget_row(COL_HS, w)))
 
         soil_item = QTableWidgetItem(fill["soil_type"])
         soil_item.setFlags(soil_item.flags() & ~Qt.ItemIsEditable)
@@ -279,6 +282,15 @@ class LayerTable(QWidget):
         cb = holder.findChild(QCheckBox) if holder else None
         return bool(cb and cb.isChecked())
 
+    def _widget_row(self, col: int, widget: QWidget) -> int:
+        """The CURRENT row of a cell widget.  Creation-time row captures go
+        stale after ``removeRow`` (Qt shifts the cell widgets up without
+        rebinding), so the handlers resolve their row at fire time."""
+        for r in range(self.table.rowCount()):
+            if self.table.cellWidget(r, col) is widget:
+                return r
+        return -1
+
     def _renumber(self) -> None:
         self._block = True
         try:
@@ -309,6 +321,12 @@ class LayerTable(QWidget):
                     t1, t2 = i1.text(), i2.text()
                     i1.setText(t2)
                     i2.setText(t1)
+            c1 = self.table.cellWidget(r1, COL_VPMODE)
+            c2 = self.table.cellWidget(r2, COL_VPMODE)
+            if c1 and c2:                      # the mode belongs to the LAYER
+                m1, m2 = c1.currentIndex(), c2.currentIndex()
+                c1.setCurrentIndex(m2)
+                c2.setCurrentIndex(m1)
             hs1, hs2 = self._hs_checked(r1), self._hs_checked(r2)
             for row, val in ((r1, hs2), (r2, hs1)):
                 holder = self.table.cellWidget(row, COL_HS)
@@ -342,6 +360,8 @@ class LayerTable(QWidget):
         self.layers_changed.emit()
 
     def _on_mode_changed(self, row: int) -> None:
+        if self._block or row < 0:
+            return
         combo = self.table.cellWidget(row, COL_VPMODE)
         if combo is None:
             return
@@ -362,12 +382,19 @@ class LayerTable(QWidget):
         self.layers_changed.emit()
 
     def _on_hs_changed(self, row: int) -> None:
+        if row < 0:
+            return
+        # Save/restore (not set/clear) — this fires DURING _swap_rows so the
+        # thickness lock follows the checkbox, and must not clobber the
+        # caller's _block or emit mid-swap.
+        was_blocked = self._block
         self._block = True
         try:
             self._lock_thickness(row, self._hs_checked(row))
         finally:
-            self._block = False
-        self.layers_changed.emit()
+            self._block = was_blocked
+        if not was_blocked:
+            self.layers_changed.emit()
 
 
 __all__ = ["LayerTable", "HEADERS", "VP_MODES"]

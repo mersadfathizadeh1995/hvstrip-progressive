@@ -7,8 +7,10 @@ never blocks the interactive tools (the agreed archetype: per-tool status,
 peer tools).  Progress streams through :class:`ProgressBridge` (latest-wins
 per frame type) from the api's ``progress_cb`` frames.
 
-Config is :class:`HVStripConfig` ONLY; persisted payloads go through
-``api.load_config_payload`` (v2 payloads; legacy dicts migrate on read).
+Config is :class:`HVStripConfig` ONLY; persisted payloads go through the
+facade's ``apply_config_payload``/``config_payload`` (the ONE funnel — v2
+payloads; legacy dicts migrate on read), and section edits through
+``update_section`` (spec 002 DC-5: no private reach-ins).
 ``status_for(tool)`` is the single source of tool-switcher truth (pull
 model).  Engine availability comes from ``analysis.check_engines()`` —
 an unavailable engine is a STATUS, never a crash.
@@ -21,7 +23,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from PySide6.QtCore import QObject, Signal
 
-from HV_Strip_Progressive.api import HVStripAnalysis, load_config_payload
+from HV_Strip_Progressive.api import HVStripAnalysis
 from HV_Strip_Progressive.gui.v2.state.profile_status import ProcessingStatus
 from HV_Strip_Progressive.gui.v2.state.tool import StripTool, ToolStatus
 from HV_Strip_Progressive.gui.v2.workers.op_worker import OpQueue, ProgressBridge
@@ -64,6 +66,11 @@ class AppState(QObject):
     op_finished = Signal(str, dict)
     error = Signal(list)
     dirty_changed = Signal(bool)
+    #: Transient UI-thread busy note (spec 002 FR-12): emitted with a
+    #: message before a deliberate main-thread block (the one-time heavy
+    #: preload), and with "" when it ends.  The window shows a busy
+    #: cursor + status text so the first Run never looks frozen.
+    busy_hint = Signal(str)
 
     # The profile-centric state model (the ProfilesPanel contract).
     checked_changed = Signal(list)                 # checked profile names
@@ -126,7 +133,7 @@ class AppState(QObject):
 
     @property
     def config(self):
-        return self._analysis._config if self._analysis else None  # noqa: SLF001
+        return self._analysis.config if self._analysis else None
 
     @property
     def is_busy(self) -> bool:
@@ -162,12 +169,12 @@ class AppState(QObject):
                 return ToolStatus.RUNNING
         if tool in self._error_tools:
             return ToolStatus.ERROR
-        if tool is StripTool.DATA and self._analysis._profiles:  # noqa: SLF001
+        if tool is StripTool.DATA and a.profile_names():
             return ToolStatus.DONE
-        if tool is StripTool.FORWARD and a._forward_results:  # noqa: SLF001
+        if tool is StripTool.FORWARD and a.forward_results():
             return ToolStatus.DONE
         if tool is StripTool.STRIP and (
-                a._strip_results or a._batch_result):        # noqa: SLF001
+                a.strip_results() or a.batch_result()):
             return ToolStatus.DONE
         if tool is StripTool.RESEARCH and self._research_results:
             return ToolStatus.DONE
@@ -232,7 +239,9 @@ class AppState(QObject):
         return self._analysis.get_profiles()
 
     def profile_names(self) -> List[str]:
-        return [p["name"] for p in (self.profiles() or [])]
+        # CHEAP — names only, no per-profile Vs30/summary computation
+        # (spec 002 FR-11); use profiles() when summaries are needed.
+        return self._analysis.profile_names() if self._analysis else []
 
     def profile_dict(self, name: str) -> Optional[Dict[str, Any]]:
         """Full profile dict (name + layers) or None."""
@@ -359,13 +368,27 @@ class AppState(QObject):
             if bucket.pop(name, None) is not None:
                 self.profile_status_changed.emit(tool, name)
 
+    def _resolve_op_profile(self, requested: Optional[str]) -> Optional[str]:
+        """Resolve the profile a single-profile op targets, BEFORE submit.
+
+        The api's ``_resolve_profile(None)`` RAISES whenever the count isn't
+        exactly one, so ``None`` must never reach the worker — default to the
+        first loaded profile here, or surface a clean error."""
+        if requested is not None:
+            return requested
+        names = self.profile_names()
+        if not names:
+            self.error.emit(["No profiles loaded."])
+            return None
+        return names[0]
+
     def _op_profile_names(self, op: str, requested: Optional[str]) -> List[str]:
         """Which profiles an op involves (for badge transitions)."""
         names = self.profile_names()
         if requested is not None:
             return [requested]
         if op in ("run_forward", "run_strip"):
-            return names[:1]   # the api resolves None → the first profile
+            return names[:1]   # unreachable — run_* resolve None pre-submit
         if op == "run_research":
             checked = self.checked_profiles()
             return checked or names
@@ -376,17 +399,19 @@ class AppState(QObject):
     # ==================================================================
     def update_config(self, section: str, **fields) -> None:
         """Set fields on one ``HVStripConfig`` section; emits
-        ``config_changed(section)``.  No compute."""
+        ``config_changed(section)``.  No compute.  Routes through the
+        facade's sanctioned funnel (spec 002 DC-5)."""
         if self._analysis is None:
             self.error.emit(["No session open."])
             return
-        from HV_Strip_Progressive.api.config import _apply_dict
-
-        target = getattr(self._analysis._config, section, None)  # noqa: SLF001
-        if target is None:
-            self.error.emit([f"Unknown config section: {section!r}"])
+        env = self._analysis.update_section(section, **fields)
+        if not env.get("success"):
+            self.error.emit([env.get("error", "config update failed")])
             return
-        _apply_dict(target, dict(fields))
+        if env.get("unmapped"):
+            self.error.emit(
+                [f"Ignored unknown config field(s): "
+                 f"{', '.join(env['unmapped'])}"])
         self._engines_report = None if section == "engine" else self._engines_report
         self._set_dirty(True)
         self.config_changed.emit(section)
@@ -405,7 +430,20 @@ class AppState(QObject):
         any main-queue op runs.  Same doctrine as
         :meth:`_ensure_research_imports`: a worker thread FIRST-importing
         heavy native extensions after another worker has touched the
-        scipy/sklearn stack hard-aborts the process on Windows."""
+        scipy/sklearn stack hard-aborts the process on Windows.  The
+        deliberate block is wrapped in :attr:`busy_hint` so the UI can
+        show it (spec 002 FR-12)."""
+        if AppState._compute_imported:
+            return
+        self.busy_hint.emit(
+            "Preparing compute libraries (one-time)…")
+        try:
+            self._do_compute_imports()
+        finally:
+            self.busy_hint.emit("")
+
+    @staticmethod
+    def _do_compute_imports() -> None:
         if AppState._compute_imported:
             return
         from HV_Strip_Progressive.api import preload_heavy_modules
@@ -425,6 +463,9 @@ class AppState(QObject):
     def run_forward(self, profile_name: Optional[str] = None) -> None:
         a = self._require()
         if a is None:
+            return
+        profile_name = self._resolve_op_profile(profile_name)
+        if profile_name is None:
             return
         self._ensure_compute_imports()
         self._track_op("run_forward", profile_name)
@@ -451,6 +492,9 @@ class AppState(QObject):
     ) -> None:
         a = self._require()
         if a is None:
+            return
+        profile_name = self._resolve_op_profile(profile_name)
+        if profile_name is None:
             return
         self._ensure_compute_imports()
         self._track_op("run_strip", profile_name)
@@ -492,11 +536,16 @@ class AppState(QObject):
         Windows — serialising the import here removes the race."""
         if AppState._research_imported:
             return
-        self._ensure_compute_imports()   # the study's report phase plots too
-        import HV_Strip_Progressive.research.runner  # noqa: F401
-        import HV_Strip_Progressive.research.metrics  # noqa: F401
+        self.busy_hint.emit(
+            "Preparing research libraries (one-time)…")
+        try:
+            self._do_compute_imports()   # the study's report phase plots too
+            import HV_Strip_Progressive.research.runner  # noqa: F401
+            import HV_Strip_Progressive.research.metrics  # noqa: F401
 
-        AppState._research_imported = True
+            AppState._research_imported = True
+        finally:
+            self.busy_hint.emit("")
 
     def run_research_phase(
         self, phase: str, study_config: Optional[Dict[str, Any]] = None,
@@ -584,15 +633,26 @@ class AppState(QObject):
     # ==================================================================
     def forward_results(self) -> Dict[str, Any]:
         a = self._analysis
-        return dict(a._forward_results) if a else {}   # noqa: SLF001
+        return a.forward_results() if a else {}
 
     def strip_results(self) -> Dict[str, Any]:
         a = self._analysis
-        return dict(a._strip_results) if a else {}     # noqa: SLF001
+        return a.strip_results() if a else {}
 
     def batch_result(self):
         a = self._analysis
-        return a._batch_result if a else None          # noqa: SLF001
+        return a.batch_result() if a else None
+
+    def vs_context(
+        self,
+        layers: List[Dict[str, Any]],
+        bedrock_depth: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Vs30/VsAvg/interfaces for a layer stack (the Vs mini-panel)."""
+        if self._analysis is None:
+            return {"success": False, "error": "No session open."}
+        return self._analysis.vs_context_for_layers(
+            layers, bedrock_depth=bedrock_depth)
 
     def profile_layers_from_file(self, path: str) -> List[Dict[str, Any]]:
         """Parse a model file into plot-ready ``[{thickness, vs}, …]`` (for
@@ -643,7 +703,7 @@ class AppState(QObject):
             payload = yaml.safe_load(target.read_text(encoding="utf-8"))
         except Exception:                                # noqa: BLE001
             return False
-        self._analysis._config = load_config_payload(payload)  # noqa: SLF001
+        self._analysis.apply_config_payload(payload)
         self._engines_report = None
         self.config_changed.emit("*")
         return True
@@ -657,7 +717,7 @@ class AppState(QObject):
 
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(
-                yaml.safe_dump(self._analysis._config.to_dict(),  # noqa: SLF001
+                yaml.safe_dump(self._analysis.config_payload(),
                                sort_keys=False),
                 encoding="utf-8",
             )
@@ -669,13 +729,13 @@ class AppState(QObject):
 
     def config_payload(self) -> Dict[str, Any]:
         """The v2 payload for project persistence (``hvstrip_state_io``)."""
-        return self._analysis._config.to_dict() if self._analysis else {}  # noqa: SLF001
+        return self._analysis.config_payload() if self._analysis else {}
 
     def apply_config_payload(self, payload: Any) -> None:
         """Project persistence load — v2 or legacy, via the funnel."""
         if self._analysis is None:
             return
-        self._analysis._config = load_config_payload(payload)  # noqa: SLF001
+        self._analysis.apply_config_payload(payload)
         self._engines_report = None
         self.config_changed.emit("*")
 

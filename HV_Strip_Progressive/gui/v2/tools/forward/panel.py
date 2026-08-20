@@ -38,7 +38,12 @@ from PySide6.QtWidgets import (
 
 from HV_Strip_Progressive.gui.v2.canvas.hv_curve_canvas import HVCurveCanvas
 from HV_Strip_Progressive.gui.v2.canvas.vs_profile_canvas import VsProfileCanvas
-from HV_Strip_Progressive.gui.v2.stages.base import PhasePanel, card, status_line
+from HV_Strip_Progressive.gui.v2.stages.base import (
+    PhasePanel,
+    card,
+    set_unfocused,
+    status_line,
+)
 from HV_Strip_Progressive.gui.v2.state import AppState, StripTool
 from HV_Strip_Progressive.gui.v2.state.layer_model import LayerModel
 from HV_Strip_Progressive.gui.v2.widgets.house.sub_breadcrumb import (
@@ -148,22 +153,25 @@ class _ConfigCards:
     def _loading(panel) -> bool:
         return getattr(panel, "_loading", False)
 
+    #: the config sections these cards display (panel refresh routing).
+    SECTIONS = ("engine", "frequency", "peak_detection")
+
     def refresh(self, panel: PhasePanel) -> None:
         cfg = panel.app_state.config
         if cfg is None:
             return
-        self.engine.setCurrentText(cfg.engine.name)
+        set_unfocused(self.engine, cfg.engine.name)
         report = panel.app_state.engines_report()
         entry = report.get(cfg.engine.name, {})
         self.engine_note.setText(
             "available" if entry.get("available")
             else f"UNAVAILABLE — {entry.get('reason', '')}")
-        self.fmin.setValue(float(cfg.frequency.fmin))
-        self.fmax.setValue(float(cfg.frequency.fmax))
-        self.nf.setValue(int(cfg.frequency.nf))
-        self.n_samples.setValue(int(cfg.frequency.n_samples))
-        self.preset.setCurrentText(cfg.peak_detection.preset)
-        self.select.setCurrentText(cfg.peak_detection.select)
+        set_unfocused(self.fmin, float(cfg.frequency.fmin))
+        set_unfocused(self.fmax, float(cfg.frequency.fmax))
+        set_unfocused(self.nf, int(cfg.frequency.nf))
+        set_unfocused(self.n_samples, int(cfg.frequency.n_samples))
+        set_unfocused(self.preset, cfg.peak_detection.preset)
+        set_unfocused(self.select, cfg.peak_detection.select)
 
 
 # ======================================================================
@@ -171,6 +179,8 @@ class _ConfigCards:
 # ======================================================================
 class ForwardSinglePanel(PhasePanel):
     """One profile (file or table) → one forward curve."""
+
+    sections = _ConfigCards.SECTIONS
 
     def build(self) -> None:
         self._loading = False
@@ -233,6 +243,9 @@ class ForwardSinglePanel(PhasePanel):
         try:
             self.cards.refresh(self)
             profiles = self.app_state.profiles()
+            names = {p["name"] for p in profiles}
+            if self._profile_name not in names:
+                self._profile_name = None      # removed/renamed → drop it
             if self._profile_name is None and profiles:
                 self._profile_name = profiles[-1]["name"]
             if self._profile_name:
@@ -243,6 +256,8 @@ class ForwardSinglePanel(PhasePanel):
                         f"{info['name']} · {info['n_layers']} layers · "
                         f"Vs30 {info['vs30']:.0f}" if info.get("vs30")
                         else info["name"])
+            else:
+                self._file_lbl.setText("No profile loaded.")
             self._run_btn.setEnabled(
                 bool(self._profile_name) and not self.app_state.is_busy)
         finally:
@@ -300,6 +315,8 @@ class ForwardSinglePanel(PhasePanel):
 # ======================================================================
 class ForwardMultiPanel(PhasePanel):
     """Many profiles → overlaid curves + a summary table."""
+
+    sections = _ConfigCards.SECTIONS
 
     def build(self) -> None:
         self._loading = False

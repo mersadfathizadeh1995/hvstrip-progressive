@@ -25,7 +25,11 @@ from .widgets.style_constants import (
 )
 
 _SETTINGS_DIR = Path.home() / ".hvstrip"
-_SETTINGS_FILE = _SETTINGS_DIR / "settings.yaml"
+# The legacy window owns its OWN file.  ``settings.yaml`` belongs to gui/v2
+# (a ``config_version: 2`` payload) — the two shapes are incompatible, and
+# sharing one path made each side silently clobber the other's edits.
+_SETTINGS_FILE = _SETTINGS_DIR / "settings_legacy.yaml"
+_V2_SETTINGS_FILE = _SETTINGS_DIR / "settings.yaml"   # read-only seed here
 
 ENGINES = ["diffuse_field", "sh_wave", "ellipticity"]
 
@@ -1397,11 +1401,17 @@ class HVStripWindow(QMainWindow):
     #  SETTINGS PERSISTENCE
     # ══════════════════════════════════════════════════════════════
     def _load_settings(self):
-        if _SETTINGS_FILE.exists():
+        path = _SETTINGS_FILE
+        if not path.exists() and _V2_SETTINGS_FILE.exists():
+            # One-time seed from the pre-split shared file — legacy-shaped
+            # payloads only; v2 payloads belong to gui/v2 and merging them
+            # here used to clobber both sides' settings.
+            path = _V2_SETTINGS_FILE
+        if path.exists():
             try:
-                with open(_SETTINGS_FILE, "r") as f:
+                with open(path, "r") as f:
                     data = yaml.safe_load(f)
-                if isinstance(data, dict):
+                if isinstance(data, dict) and "config_version" not in data:
                     self._deep_merge(self._config, data)
                     eng = self._config.get("engine", "diffuse_field")
                     if isinstance(eng, dict):
